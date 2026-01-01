@@ -121,7 +121,7 @@ An operator needs visibility into broker performance, including publish latency,
 - **FR-004**: System MUST enforce Credit-Based Flow Control — no message delivery without explicit credit.
 - **FR-005**: System MUST auto-create topics on first publish if they don't exist.
 - **FR-006**: System MUST generate UUIDv7 (time-sortable) message IDs server-side.
-- **FR-007**: System MUST maintain monotonic sequence numbers per topic.
+- **FR-007**: System MUST maintain global monotonic sequence numbers across all topics.
 - **FR-008**: System MUST track consumer group cursors persistently across restarts.
 - **FR-009**: System MUST support `LATEST` and `EARLIEST` initial positions for subscriptions.
 - **FR-010**: System MUST implement Group Commit (batching) to achieve 5,000+ msg/s throughput.
@@ -135,7 +135,7 @@ An operator needs visibility into broker performance, including publish latency,
 
 ### Key Entities
 
-- **Message**: The unit of data flowing through Sluice. Contains: message_id (UUIDv7), sequence (per-topic monotonic), topic_id, payload (opaque bytes), attributes (key-value headers), timestamp (Unix epoch ms).
+- **Message**: The unit of data flowing through Sluice. Contains: message_id (UUIDv7), sequence (global monotonic), topic_id, payload (opaque bytes), attributes (key-value headers), timestamp (Unix epoch ms).
 
 - **Topic**: A named stream of messages. Auto-created on first publish. Contains: topic_id, name, creation timestamp.
 

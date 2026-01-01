@@ -20,12 +20,12 @@
 
 **Purpose**: Project structure and build configuration
 
-- [ ] T001 Create project directory structure per plan.md in src/
-- [ ] T002 Configure Cargo.toml with dependencies: tonic, prost, tokio, rusqlite, r2d2, r2d2_sqlite, uuid (v7), tracing, opentelemetry, clap
-- [ ] T003 [P] Setup build.rs for tonic protobuf code generation from proto/sluice/v1/sluice.proto
-- [ ] T004 [P] Configure clippy and rustfmt settings in .rustfmt.toml and clippy.toml
-- [ ] T005 [P] Create src/lib.rs as library root with module declarations
-- [ ] T006 Create tests/common/mod.rs with test utilities and server harness
+- [x] T001 Create project directory structure per plan.md in src/
+- [x] T002 Configure Cargo.toml with dependencies: tonic, prost, tokio, rusqlite, r2d2, r2d2_sqlite, uuid (v7), tracing, opentelemetry, clap
+- [x] T003 [P] Setup build.rs for tonic protobuf code generation from proto/sluice/v1/sluice.proto
+- [x] T004 [P] Configure clippy and rustfmt settings in .rustfmt.toml and clippy.toml
+- [x] T005 [P] Create src/lib.rs as library root with module declarations
+- [x] T006 Create tests/common/mod.rs with test utilities and server harness
 
 ---
 
@@ -35,15 +35,15 @@
 
 **⚠️ CRITICAL**: All user stories depend on this phase — no story work until complete
 
-- [ ] T007 Implement SQLite schema initialization in src/storage/schema.rs per data-model.md
-- [ ] T008 [P] Implement connection pool (r2d2) for read operations in src/storage/reader.rs
-- [ ] T009 Implement dedicated writer thread with mpsc channel in src/storage/writer.rs per research.md decision 2
-- [ ] T010 [P] Implement notification bus using tokio::sync::broadcast in src/flow/notify.rs per research.md decision 3
-- [ ] T011 Implement group commit batch logic in src/storage/batch.rs per research.md decision 1
-- [ ] T012 [P] Setup OpenTelemetry tracing in src/observability/tracing.rs
-- [ ] T013 [P] Setup gRPC server skeleton with tonic in src/server.rs
-- [ ] T014 Create src/proto.rs module for generated protobuf code re-export
-- [ ] T015 Implement configuration parsing (CLI args, env vars) with clap in src/config.rs
+- [x] T007 Implement SQLite schema initialization in src/storage/schema.rs per data-model.md
+- [x] T008 [P] Implement connection pool (r2d2) for read operations in src/storage/reader.rs
+- [x] T009 Implement dedicated writer thread with mpsc channel in src/storage/writer.rs per research.md decision 2
+- [x] T010 [P] Implement notification bus using tokio::sync::broadcast in src/flow/notify.rs per research.md decision 3
+- [x] T011 Implement group commit batch logic in src/storage/batch.rs per research.md decision 1
+- [x] T012 [P] Setup OpenTelemetry tracing in src/observability/tracing.rs
+- [x] T013 [P] Setup gRPC server skeleton with tonic in src/server.rs
+- [x] T014 Create src/proto.rs module for generated protobuf code re-export
+- [x] T015 Implement configuration parsing (CLI args, env vars) with clap in src/config.rs
 
 **Checkpoint**: Foundation ready — user story implementation can now begin
 
@@ -63,14 +63,14 @@
 
 ### Implementation for User Story 1
 
-- [ ] T019 [P] [US1] Create Topic entity operations in src/storage/schema.rs — insert_or_get_topic()
-- [ ] T020 [P] [US1] Create Message entity operations in src/storage/schema.rs — insert_message()
-- [ ] T021 [US1] Implement UUIDv7 message ID generation utility in src/lib.rs per research.md decision 5
-- [ ] T022 [US1] Implement WriteCommand for publish in src/storage/writer.rs — PublishCommand struct
-- [ ] T023 [US1] Implement Publish RPC handler in src/service/publish.rs — persistence, fsync, response
-- [ ] T024 [US1] Wire Publish service to gRPC server in src/server.rs
-- [ ] T025 [US1] Add error handling for RESOURCE_EXHAUSTED (4MB limit) and UNAVAILABLE (disk full) in src/service/publish.rs
-- [ ] T026 [US1] Add tracing spans for publish operations in src/service/publish.rs
+- [x] T019 [P] [US1] Create Topic entity operations in src/storage/schema.rs — insert_or_get_topic()
+- [x] T020 [P] [US1] Create Message entity operations in src/storage/schema.rs — insert_message()
+- [x] T021 [US1] Implement UUIDv7 message ID generation utility in src/lib.rs per research.md decision 5
+- [x] T022 [US1] Implement WriteCommand for publish in src/storage/writer.rs — PublishCommand struct
+- [x] T023 [US1] Implement Publish RPC handler in src/service/publish.rs — persistence, fsync, response
+- [x] T024 [US1] Wire Publish service to gRPC server in src/server.rs
+- [x] T025 [US1] Add error handling for RESOURCE_EXHAUSTED (4MB limit) and UNAVAILABLE (disk full) in src/service/publish.rs
+- [x] T026 [US1] Add tracing spans for publish operations in src/service/publish.rs
 
 **Checkpoint**: User Story 1 complete — publish works end-to-end, messages survive crash
 
@@ -91,16 +91,16 @@
 
 ### Implementation for User Story 2
 
-- [ ] T031 [P] [US2] Implement credit balance tracking with AtomicU32 in src/flow/credit.rs per research.md decision 4
-- [ ] T032 [US2] Create Subscription entity operations in src/storage/schema.rs — get_or_create_subscription()
-- [ ] T033 [US2] Implement message fetch from cursor in src/storage/reader.rs — fetch_messages_from_seq()
-- [ ] T034 [US2] Implement SubscriptionState struct in src/service/subscribe.rs — credits, cursor, topic_id
-- [ ] T035 [US2] Implement Subscribe RPC handler (bidirectional stream) in src/service/subscribe.rs
-- [ ] T036 [US2] Implement inbound message handler (Init, CreditGrant, Ack) in src/service/subscribe.rs
-- [ ] T037 [US2] Implement outbound message delivery loop in src/service/subscribe.rs — respects credits
-- [ ] T038 [US2] Integrate notification bus wake-up in src/service/subscribe.rs per research.md decision 3
-- [ ] T039 [US2] Wire Subscribe service to gRPC server in src/server.rs
-- [ ] T040 [US2] Add tracing spans for subscribe operations in src/service/subscribe.rs
+- [x] T031 [P] [US2] Implement credit balance tracking with AtomicU32 in src/flow/credit.rs per research.md decision 4
+- [x] T032 [US2] Create Subscription entity operations in src/storage/schema.rs — get_or_create_subscription()
+- [x] T033 [US2] Implement message fetch from cursor in src/storage/reader.rs — fetch_messages_from_seq()
+- [x] T034 [US2] Implement SubscriptionState struct in src/service/subscribe.rs — credits, cursor, topic_id
+- [x] T035 [US2] Implement Subscribe RPC handler (bidirectional stream) in src/service/subscribe.rs
+- [x] T036 [US2] Implement inbound message handler (Init, CreditGrant, Ack) in src/service/subscribe.rs
+- [x] T037 [US2] Implement outbound message delivery loop in src/service/subscribe.rs — respects credits
+- [x] T038 [US2] Integrate notification bus wake-up in src/service/subscribe.rs per research.md decision 3
+- [x] T039 [US2] Wire Subscribe service to gRPC server in src/server.rs
+- [x] T040 [US2] Add tracing spans for subscribe operations in src/service/subscribe.rs
 
 **Checkpoint**: User Story 2 complete — subscription with credits works, backpressure active
 
@@ -120,11 +120,11 @@
 
 ### Implementation for User Story 3
 
-- [ ] T044 [US3] Implement cursor update in src/storage/schema.rs — update_cursor()
-- [ ] T045 [US3] Implement Ack handling in src/service/subscribe.rs — lookup message, update cursor
+- [x] T044 [US3] Implement cursor update in src/storage/schema.rs — update_cursor()
+- [x] T045 [US3] Implement Ack handling in src/service/subscribe.rs — lookup message, update cursor
 - [ ] T046 [US3] Implement consumer group takeover logic in src/service/subscribe.rs per spec.md clarification — terminate prior connection, inherit cursor
-- [ ] T047 [US3] Add warning logging for non-existent message ACK in src/service/subscribe.rs
-- [ ] T048 [US3] Add tracing spans for ACK operations in src/service/subscribe.rs
+- [x] T047 [US3] Add warning logging for non-existent message ACK in src/service/subscribe.rs
+- [x] T048 [US3] Add tracing spans for ACK operations in src/service/subscribe.rs
 
 **Checkpoint**: User Story 3 complete — ACK/cursor works, resume after crash verified
 

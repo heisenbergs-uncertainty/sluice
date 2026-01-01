@@ -1,2 +1,37 @@
+# Build outputs
 /target
+debug/
+release/
+
+# Nix/direnv
 /.direnv
+
+# IDE
+.idea/
+*.iml
+
+# Logs
+*.log
+
+# Environment
+.env*
+!.envrc
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# Coverage
+*.profraw
+*.profdata
+coverage/

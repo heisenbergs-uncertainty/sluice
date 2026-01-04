@@ -3,9 +3,11 @@
 //! Handles unary Publish requests with durable persistence.
 
 use std::sync::Arc;
+use std::time::Instant;
 use tonic::{Request, Response, Status};
 
 use crate::generate_message_id;
+use crate::observability::metrics::record_publish;
 use crate::proto::sluice::v1::{PublishRequest, PublishResponse};
 use crate::server::ServerState;
 use crate::storage::writer::WriterError;
@@ -21,6 +23,7 @@ pub async fn handle_publish(
     state: &Arc<ServerState>,
     request: Request<PublishRequest>,
 ) -> Result<Response<PublishResponse>, Status> {
+    let start = Instant::now();
     let req = request.into_inner();
 
     // Validate topic
@@ -29,7 +32,20 @@ pub async fn handle_publish(
     }
 
     if req.topic.len() > 255 {
-        return Err(Status::invalid_argument("topic name too long (max 255 characters)"));
+        return Err(Status::invalid_argument(
+            "topic name too long (max 255 characters)",
+        ));
+    }
+
+    // Validate topic name characters (alphanumeric, dash, underscore, dot)
+    if !req
+        .topic
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        return Err(Status::invalid_argument(
+            "topic name must contain only alphanumeric characters, dashes, underscores, or dots",
+        ));
     }
 
     // Validate payload size
@@ -43,13 +59,17 @@ pub async fn handle_publish(
 
     tracing::Span::current().record("topic", &req.topic);
 
+    // Clone topic for metrics before moving to writer
+    let topic_for_metrics = req.topic.clone();
+
     // Serialize attributes to JSON
     let attributes = if req.attributes.is_empty() {
         None
     } else {
-        Some(serde_json::to_string(&req.attributes).map_err(|e| {
-            Status::invalid_argument(format!("invalid attributes: {e}"))
-        })?)
+        Some(
+            serde_json::to_string(&req.attributes)
+                .map_err(|e| Status::invalid_argument(format!("invalid attributes: {e}")))?,
+        )
     };
 
     // Generate message ID
@@ -70,9 +90,7 @@ pub async fn handle_publish(
         )
         .await
         .map_err(|e| match e {
-            WriterError::ChannelClosed => {
-                Status::unavailable("server is shutting down")
-            }
+            WriterError::ChannelClosed => Status::unavailable("server is shutting down"),
             WriterError::Database(msg) if msg.contains("disk") || msg.contains("full") => {
                 Status::unavailable(format!("storage error: {msg}"))
             }
@@ -80,9 +98,14 @@ pub async fn handle_publish(
             WriterError::ThreadPanic => Status::internal("internal error"),
         })?;
 
+    // Record metrics
+    let latency = start.elapsed().as_secs_f64();
+    record_publish(&topic_for_metrics, latency);
+
     tracing::debug!(
         message_id = %result.message_id,
         sequence = result.sequence,
+        latency_ms = latency * 1000.0,
         "Message published"
     );
 
@@ -92,4 +115,3 @@ pub async fn handle_publish(
         timestamp: result.timestamp,
     }))
 }
-

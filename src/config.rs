@@ -40,6 +40,10 @@ pub struct Config {
     /// Size of the notification channel
     #[arg(long, env = "SLUICE_NOTIFY_CHANNEL_SIZE", default_value_t = 1024)]
     pub notify_channel_size: usize,
+
+    /// OpenTelemetry collector endpoint for metrics export (optional)
+    #[arg(long, env = "OTEL_EXPORTER_OTLP_ENDPOINT")]
+    pub otel_endpoint: Option<String>,
 }
 
 impl Config {
@@ -59,6 +63,7 @@ impl Config {
             write_channel_size: 100,
             reader_pool_size: 5,
             notify_channel_size: 256,
+            otel_endpoint: None,
         }
     }
 }
@@ -73,6 +78,7 @@ impl Default for Config {
             write_channel_size: 1000,
             reader_pool_size: 10,
             notify_channel_size: 1024,
+            otel_endpoint: None,
         }
     }
 }
@@ -88,4 +94,3 @@ mod tests {
         assert_eq!(config.host, "0.0.0.0");
     }
 }
-

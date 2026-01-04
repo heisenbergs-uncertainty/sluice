@@ -10,10 +10,14 @@ use tokio_stream::Stream;
 use tonic::{Request, Response, Status, Streaming};
 
 use crate::flow::credit::CreditBalance;
+use crate::observability::metrics::{record_backpressure, record_subscription_lag};
 use crate::proto::sluice::v1::subscribe_downstream::Response as DownstreamResponse;
 use crate::proto::sluice::v1::subscribe_upstream::Request as UpstreamRequest;
-use crate::proto::sluice::v1::{InitialPosition, MessageDelivery, SubscribeDownstream, SubscribeUpstream};
+use crate::proto::sluice::v1::{
+    InitialPosition, MessageDelivery, SubscribeDownstream, SubscribeUpstream,
+};
 use crate::server::ServerState;
+use crate::service::ConsumerGroupKey;
 use crate::storage::schema::{
     fetch_messages_from_seq, get_message_seq_by_id, get_or_create_subscription, get_topic_by_name,
     get_topic_max_seq, update_cursor,
@@ -37,7 +41,11 @@ pub async fn handle_subscribe(
     let init = match inbound.message().await? {
         Some(msg) => match msg.request {
             Some(UpstreamRequest::Init(init)) => init,
-            _ => return Err(Status::invalid_argument("first message must be SubscriptionInit")),
+            _ => {
+                return Err(Status::invalid_argument(
+                    "first message must be SubscriptionInit",
+                ))
+            }
         },
         None => return Err(Status::invalid_argument("stream closed before init")),
     };
@@ -45,6 +53,21 @@ pub async fn handle_subscribe(
     // Validate init
     if init.topic.is_empty() {
         return Err(Status::invalid_argument("topic cannot be empty"));
+    }
+    if init.topic.len() > 255 {
+        return Err(Status::invalid_argument(
+            "topic name exceeds 255 characters",
+        ));
+    }
+    // Only allow alphanumeric, dash, underscore, and dot
+    if !init
+        .topic
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        return Err(Status::invalid_argument(
+            "topic name contains invalid characters (only alphanumeric, dash, underscore, dot allowed)",
+        ));
     }
 
     // Extract initial_position early before moving other fields
@@ -110,6 +133,15 @@ pub async fn handle_subscribe(
 
     drop(conn);
 
+    // Register connection for takeover handling
+    let consumer_group_key = ConsumerGroupKey {
+        topic_id: topic.id,
+        consumer_group: consumer_group.clone(),
+    };
+    let cancel_rx = state
+        .connection_registry
+        .register(consumer_group_key.clone());
+
     // Create response channel
     let (tx, rx) = mpsc::channel(100);
 
@@ -122,18 +154,24 @@ pub async fn handle_subscribe(
 
     // Spawn subscription handler task
     tokio::spawn(async move {
-        if let Err(e) = subscription_loop(
-            state,
+        let result = subscription_loop(
+            Arc::clone(&state),
             inbound,
             tx,
             topic.id,
-            consumer_group,
+            topic_name.clone(),
+            consumer_group.clone(),
             consumer_id,
             start_cursor,
             credits_clone,
+            cancel_rx,
         )
-        .await
-        {
+        .await;
+
+        // Unregister connection when done
+        state.connection_registry.unregister(&consumer_group_key);
+
+        if let Err(e) = result {
             tracing::warn!(error = %e, "Subscription ended with error");
         }
     });
@@ -148,10 +186,12 @@ async fn subscription_loop(
     mut inbound: Streaming<SubscribeUpstream>,
     tx: mpsc::Sender<Result<SubscribeDownstream, Status>>,
     topic_id: i64,
+    topic_name: String,
     consumer_group: String,
     consumer_id: String,
     initial_cursor: i64,
     credits: Arc<CreditBalance>,
+    mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<(), Status> {
     let mut cursor = initial_cursor;
     let mut notify_rx = state.notify_bus.subscribe();
@@ -165,6 +205,18 @@ async fn subscription_loop(
 
     loop {
         tokio::select! {
+            // Handle consumer group takeover (cancellation)
+            _ = &mut cancel_rx => {
+                tracing::info!(
+                    consumer_id = %consumer_id,
+                    consumer_group = %consumer_group,
+                    "Connection terminated due to consumer group takeover"
+                );
+                // Send ABORTED status to client
+                let _ = tx.send(Err(Status::aborted("consumer group takeover"))).await;
+                return Err(Status::aborted("consumer group takeover"));
+            }
+
             // Handle inbound messages (CreditGrant, Ack)
             msg = inbound.message() => {
                 match msg {
@@ -201,7 +253,7 @@ async fn subscription_loop(
                 match notification {
                     Ok(notif) if notif.topic_id == topic_id => {
                         // New data available, try to deliver
-                        deliver_messages(&state, &tx, topic_id, &mut cursor, &credits).await?;
+                        deliver_messages(&state, &tx, topic_id, &topic_name, &consumer_group, &mut cursor, &credits).await?;
                     }
                     Ok(_) => {
                         // Notification for different topic, ignore
@@ -209,7 +261,7 @@ async fn subscription_loop(
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         tracing::warn!(lagged = n, "Notification receiver lagged");
                         // Try to deliver anyway
-                        deliver_messages(&state, &tx, topic_id, &mut cursor, &credits).await?;
+                        deliver_messages(&state, &tx, topic_id, &topic_name, &consumer_group, &mut cursor, &credits).await?;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         tracing::info!("Notification bus closed");
@@ -221,16 +273,28 @@ async fn subscription_loop(
 
         // Try to deliver messages if we have credits
         if credits.available() > 0 {
-            deliver_messages(&state, &tx, topic_id, &mut cursor, &credits).await?;
+            deliver_messages(
+                &state,
+                &tx,
+                topic_id,
+                &topic_name,
+                &consumer_group,
+                &mut cursor,
+                &credits,
+            )
+            .await?;
         }
     }
 }
 
 /// Deliver available messages to the client.
+#[allow(clippy::too_many_arguments)]
 async fn deliver_messages(
     state: &Arc<ServerState>,
     tx: &mpsc::Sender<Result<SubscribeDownstream, Status>>,
     topic_id: i64,
+    topic_name: &str,
+    consumer_group: &str,
     cursor: &mut i64,
     credits: &Arc<CreditBalance>,
 ) -> Result<(), Status> {
@@ -248,7 +312,19 @@ async fn deliver_messages(
     let messages = fetch_messages_from_seq(&conn, topic_id, *cursor, available_credits as i64)
         .map_err(|e| Status::internal(format!("database error: {e}")))?;
 
+    // Get max sequence for lag calculation
+    let max_seq = get_topic_max_seq(&conn, topic_id)
+        .map_err(|e| Status::internal(format!("database error: {e}")))?;
+
     drop(conn);
+
+    // Record subscription lag
+    let lag = max_seq - *cursor;
+    record_subscription_lag(topic_name, consumer_group, lag);
+
+    // Record backpressure state (active if no credits and there's lag)
+    let has_backpressure = available_credits == 0 && lag > 0;
+    record_backpressure(topic_name, consumer_group, has_backpressure);
 
     for msg in messages {
         // Try to consume a credit
@@ -326,4 +402,3 @@ async fn handle_ack(
 
     Ok(())
 }
-

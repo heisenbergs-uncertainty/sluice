@@ -1,7 +1,10 @@
 //! gRPC service handlers for Sluice.
 
 pub mod publish;
+pub mod registry;
 pub mod subscribe;
+
+pub use registry::{ConnectionRegistry, ConsumerGroupKey};
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -47,4 +50,3 @@ impl Sluice for SluiceService {
         subscribe::handle_subscribe(&self.state, request).await
     }
 }
-

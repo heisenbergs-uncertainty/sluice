@@ -13,7 +13,7 @@ use tonic::transport::Server;
 use crate::config::Config;
 use crate::flow::notify::NotificationBus;
 use crate::proto::sluice::v1::sluice_server::SluiceServer;
-use crate::service::SluiceService;
+use crate::service::{ConnectionRegistry, SluiceService};
 use crate::storage::reader::ReaderPool;
 use crate::storage::writer::{Writer, WriterHandle};
 
@@ -22,6 +22,7 @@ pub struct ServerState {
     pub writer: WriterHandle,
     pub reader_pool: ReaderPool,
     pub notify_bus: NotificationBus,
+    pub connection_registry: ConnectionRegistry,
 }
 
 /// Run the Sluice gRPC server.
@@ -44,7 +45,11 @@ pub async fn run_server(
     let notify_bus = NotificationBus::new(config.notify_channel_size);
 
     // Spawn writer thread
-    let writer = Writer::spawn(config.data_dir.join("sluice.db"), notify_bus.clone(), config.write_channel_size)?;
+    let writer = Writer::spawn(
+        config.data_dir.join("sluice.db"),
+        notify_bus.clone(),
+        config.write_channel_size,
+    )?;
     let writer_handle = writer.handle();
 
     // Create reader pool
@@ -55,6 +60,7 @@ pub async fn run_server(
         writer: writer_handle.clone(),
         reader_pool,
         notify_bus,
+        connection_registry: ConnectionRegistry::new(),
     });
 
     // Create service
@@ -80,4 +86,3 @@ pub async fn run_server(
     tracing::info!("Server stopped");
     Ok(())
 }
-

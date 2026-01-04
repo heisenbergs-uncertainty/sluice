@@ -20,8 +20,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 ///
 /// Panics if tracing has already been initialized.
 pub fn init_tracing(service_name: &str) {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,sluice=debug"));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sluice=debug"));
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(true)
@@ -44,4 +44,3 @@ pub fn init_test_tracing() {
         .with_test_writer()
         .try_init();
 }
-

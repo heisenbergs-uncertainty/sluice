@@ -107,9 +107,9 @@ async fn test_publish_creates_topic_automatically() {
     server.shutdown().await;
 }
 
-/// T017: Separate topics have independent sequences.
+/// T017: Separate topics share global sequence (per data-model.md).
 #[tokio::test]
-async fn test_separate_topics_have_independent_sequences() {
+async fn test_separate_topics_share_global_sequence() {
     let server = common::TestServer::start().await;
     let mut client = server.client().await;
 
@@ -132,12 +132,11 @@ async fn test_separate_topics_have_independent_sequences() {
         .expect("publish failed")
         .into_inner();
 
-    // Topic A should be at sequence 2
+    // Sequences should be globally incrementing
     assert_eq!(resp_a1.sequence, 1);
     assert_eq!(resp_a2.sequence, 2);
-
-    // Topic B should start at sequence 1 (independent)
-    assert_eq!(resp_b1.sequence, 1);
+    // Topic B continues the global sequence
+    assert_eq!(resp_b1.sequence, 3);
 
     server.shutdown().await;
 }

@@ -60,8 +60,8 @@ pub struct TestServer {
     shutdown_tx: watch::Sender<bool>,
     /// Server task handle
     server_task: tokio::task::JoinHandle<()>,
-    /// Fixture for cleanup
-    _fixture: TestFixture,
+    /// Fixture for cleanup (optional if using external data_dir)
+    _fixture: Option<TestFixture>,
 }
 
 impl TestServer {
@@ -71,9 +71,20 @@ impl TestServer {
     }
 
     /// Start a new test server with a specific configuration.
+    ///
+    /// Note: If `config.data_dir` is a valid path, it will be used as-is.
+    /// Otherwise, a temporary directory is created.
     pub async fn start_with_config(mut config: Config) -> Self {
-        let fixture = TestFixture::new();
-        config.data_dir = fixture.temp_dir.path().to_path_buf();
+        // Only create fixture if data_dir is the default
+        let fixture = if config.data_dir.as_os_str().is_empty()
+            || config.data_dir == std::path::PathBuf::from("./data")
+        {
+            let f = TestFixture::new();
+            config.data_dir = f.temp_dir.path().to_path_buf();
+            Some(f)
+        } else {
+            None
+        };
 
         // Find an available port
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")

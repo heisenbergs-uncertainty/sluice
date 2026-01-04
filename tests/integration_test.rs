@@ -9,8 +9,8 @@ mod common;
 use futures::StreamExt;
 use sluice::proto::sluice::v1::{
     subscribe_downstream::Response as DownstreamResponse,
-    subscribe_upstream::Request as UpstreamRequest,
-    Ack, CreditGrant, InitialPosition, PublishRequest, SubscribeUpstream, SubscriptionInit,
+    subscribe_upstream::Request as UpstreamRequest, Ack, CreditGrant, InitialPosition,
+    PublishRequest, SubscribeUpstream, SubscriptionInit,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -64,8 +64,10 @@ async fn test_message_survives_restart() {
 
     // Phase 1: Start server, publish message, shutdown
     {
-        let mut config = sluice::config::Config::default();
-        config.data_dir = data_dir.clone();
+        let config = sluice::config::Config {
+            data_dir: data_dir.clone(),
+            ..Default::default()
+        };
 
         let server = common::TestServer::start_with_config(config).await;
         let mut client = server.client().await;
@@ -84,8 +86,10 @@ async fn test_message_survives_restart() {
 
     // Phase 2: Start new server on same database, verify message exists
     {
-        let mut config = sluice::config::Config::default();
-        config.data_dir = data_dir;
+        let config = sluice::config::Config {
+            data_dir,
+            ..Default::default()
+        };
 
         let server = common::TestServer::start_with_config(config).await;
         let mut client = server.client().await;
@@ -94,9 +98,13 @@ async fn test_message_survives_restart() {
         let (tx, rx) = tokio::sync::mpsc::channel::<SubscribeUpstream>(10);
         let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
 
-        tx.send(make_init(topic, "durability-group", InitialPosition::Earliest))
-            .await
-            .unwrap();
+        tx.send(make_init(
+            topic,
+            "durability-group",
+            InitialPosition::Earliest,
+        ))
+        .await
+        .unwrap();
         tx.send(make_credit(10)).await.unwrap();
 
         let response = client.subscribe(stream).await.expect("subscribe failed");
@@ -110,7 +118,10 @@ async fn test_message_survives_restart() {
             .expect("stream error");
 
         if let Some(DownstreamResponse::Delivery(d)) = delivery.response {
-            assert_eq!(d.message_id, message_id, "message should persist across restart");
+            assert_eq!(
+                d.message_id, message_id,
+                "message should persist across restart"
+            );
             assert_eq!(d.payload, b"durable message");
         } else {
             panic!("expected delivery");
@@ -132,8 +143,10 @@ async fn test_cursor_persists_across_restart() {
 
     // Phase 1: Publish messages, consume and ACK first one
     {
-        let mut config = sluice::config::Config::default();
-        config.data_dir = data_dir.clone();
+        let config = sluice::config::Config {
+            data_dir: data_dir.clone(),
+            ..Default::default()
+        };
 
         let server = common::TestServer::start_with_config(config).await;
         let mut client = server.client().await;
@@ -180,8 +193,10 @@ async fn test_cursor_persists_across_restart() {
 
     // Phase 2: Restart and verify we resume from message 2
     {
-        let mut config = sluice::config::Config::default();
-        config.data_dir = data_dir;
+        let config = sluice::config::Config {
+            data_dir,
+            ..Default::default()
+        };
 
         let server = common::TestServer::start_with_config(config).await;
         let mut client = server.client().await;
@@ -206,11 +221,7 @@ async fn test_cursor_persists_across_restart() {
             .expect("stream error");
 
         if let Some(DownstreamResponse::Delivery(d)) = delivery.response {
-            assert_eq!(
-                d.payload,
-                b"message 2",
-                "should resume from ACKed position"
-            );
+            assert_eq!(d.payload, b"message 2", "should resume from ACKed position");
         } else {
             panic!("expected delivery");
         }
@@ -258,10 +269,7 @@ async fn test_slow_consumer_does_not_block_producer() {
             result.is_ok(),
             "producer should not be blocked by slow consumer"
         );
-        assert!(
-            result.unwrap().is_ok(),
-            "publish should succeed"
-        );
+        assert!(result.unwrap().is_ok(), "publish should succeed");
     }
 
     drop(tx);

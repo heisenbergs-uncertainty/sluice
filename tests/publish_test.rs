@@ -29,7 +29,10 @@ async fn test_publish_returns_valid_response() {
     let resp = response.into_inner();
 
     // Verify message_id is a valid UUID
-    assert!(!resp.message_id.is_empty(), "message_id should not be empty");
+    assert!(
+        !resp.message_id.is_empty(),
+        "message_id should not be empty"
+    );
     assert!(
         uuid::Uuid::parse_str(&resp.message_id).is_ok(),
         "message_id should be valid UUID: {}",

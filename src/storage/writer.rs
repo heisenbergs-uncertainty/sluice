@@ -274,9 +274,13 @@ fn writer_thread_main(
                 if !batch.is_empty() {
                     flush_batch(&conn, &mut batch, &mut topic_cache, &notify_bus)?;
                 }
-                let result =
-                    get_or_create_subscription(&conn, cmd.topic_id, &cmd.consumer_group, now_millis())
-                        .map_err(|e| WriterError::Database(e.to_string()));
+                let result = get_or_create_subscription(
+                    &conn,
+                    cmd.topic_id,
+                    &cmd.consumer_group,
+                    now_millis(),
+                )
+                .map_err(|e| WriterError::Database(e.to_string()));
                 let _ = cmd.reply.send(result);
             }
             Some(WriterMessage::UpdateCursor(cmd)) => {
@@ -284,10 +288,15 @@ fn writer_thread_main(
                 if !batch.is_empty() {
                     flush_batch(&conn, &mut batch, &mut topic_cache, &notify_bus)?;
                 }
-                let result =
-                    update_cursor(&conn, cmd.topic_id, &cmd.consumer_group, cmd.cursor_seq, now_millis())
-                        .map(|_| ())
-                        .map_err(|e| WriterError::Database(e.to_string()));
+                let result = update_cursor(
+                    &conn,
+                    cmd.topic_id,
+                    &cmd.consumer_group,
+                    cmd.cursor_seq,
+                    now_millis(),
+                )
+                .map(|_| ())
+                .map_err(|e| WriterError::Database(e.to_string()));
                 let _ = cmd.reply.send(result);
             }
             Some(WriterMessage::Shutdown) => {

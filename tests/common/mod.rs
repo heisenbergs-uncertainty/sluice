@@ -16,8 +16,8 @@ use sluice::config::Config;
 use sluice::flow::notify::NotificationBus;
 use sluice::proto::sluice::v1::sluice_client::SluiceClient;
 use sluice::proto::sluice::v1::sluice_server::SluiceServer;
-use sluice::service::{ConnectionRegistry, SluiceService};
 use sluice::server::ServerState;
+use sluice::service::{ConnectionRegistry, SluiceService};
 use sluice::storage::reader::ReaderPool;
 use sluice::storage::writer::Writer;
 use tonic::transport::{Channel, Server};
@@ -77,7 +77,7 @@ impl TestServer {
     pub async fn start_with_config(mut config: Config) -> Self {
         // Only create fixture if data_dir is the default
         let fixture = if config.data_dir.as_os_str().is_empty()
-            || config.data_dir == std::path::PathBuf::from("./data")
+            || config.data_dir.as_path() == std::path::Path::new("./data")
         {
             let f = TestFixture::new();
             config.data_dir = f.temp_dir.path().to_path_buf();
@@ -111,8 +111,9 @@ impl TestServer {
         let writer_handle = writer.handle();
 
         // Create reader pool
-        let reader_pool = ReaderPool::new(config.data_dir.join("sluice.db"), config.reader_pool_size)
-            .expect("failed to create reader pool");
+        let reader_pool =
+            ReaderPool::new(config.data_dir.join("sluice.db"), config.reader_pool_size)
+                .expect("failed to create reader pool");
 
         // Create shared state
         let state = Arc::new(ServerState {
@@ -138,7 +139,10 @@ impl TestServer {
                 .expect("server error");
 
             // Shutdown writer
-            writer_handle.shutdown().await.expect("writer shutdown failed");
+            writer_handle
+                .shutdown()
+                .await
+                .expect("writer shutdown failed");
             writer.join().expect("writer join failed");
         });
 
@@ -178,6 +182,7 @@ impl TestServer {
 /// # Returns
 ///
 /// `true` if condition was met, `false` if timeout expired
+#[allow(dead_code)]
 pub async fn wait_for<F>(timeout: std::time::Duration, mut condition: F) -> bool
 where
     F: FnMut() -> bool,
@@ -203,4 +208,3 @@ mod tests {
         assert!(fixture.db_path_str().contains("test.db"));
     }
 }
-

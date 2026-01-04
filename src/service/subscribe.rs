@@ -10,6 +10,7 @@ use tokio_stream::Stream;
 use tonic::{Request, Response, Status, Streaming};
 
 use crate::flow::credit::CreditBalance;
+use crate::generate_message_id;
 use crate::observability::metrics::{record_backpressure, record_subscription_lag};
 use crate::proto::sluice::v1::subscribe_downstream::Response as DownstreamResponse;
 use crate::proto::sluice::v1::subscribe_upstream::Request as UpstreamRequest;
@@ -21,7 +22,6 @@ use crate::service::ConsumerGroupKey;
 use crate::storage::schema::{
     fetch_messages_from_seq, get_message_seq_by_id, get_topic_by_name, get_topic_max_seq,
 };
-use crate::generate_message_id;
 
 type SubscribeStream =
     Pin<Box<dyn Stream<Item = Result<SubscribeDownstream, Status>> + Send + 'static>>;

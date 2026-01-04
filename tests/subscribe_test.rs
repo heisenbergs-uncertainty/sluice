@@ -12,8 +12,8 @@ mod common;
 use futures::StreamExt;
 use sluice::proto::sluice::v1::{
     subscribe_downstream::Response as DownstreamResponse,
-    subscribe_upstream::Request as UpstreamRequest,
-    Ack, CreditGrant, InitialPosition, PublishRequest, SubscribeUpstream, SubscriptionInit,
+    subscribe_upstream::Request as UpstreamRequest, Ack, CreditGrant, InitialPosition,
+    PublishRequest, SubscribeUpstream, SubscriptionInit,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -74,18 +74,19 @@ async fn test_subscribe_init_establishes_stream() {
     let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
 
     // Send init
-    tx.send(make_init("sub-topic-1", "test-group", InitialPosition::Earliest))
-        .await
-        .expect("send init failed");
+    tx.send(make_init(
+        "sub-topic-1",
+        "test-group",
+        InitialPosition::Earliest,
+    ))
+    .await
+    .expect("send init failed");
 
     // Send credits
     tx.send(make_credit(10)).await.expect("send credits failed");
 
     // Start subscription
-    let response = client
-        .subscribe(stream)
-        .await
-        .expect("subscribe failed");
+    let response = client.subscribe(stream).await.expect("subscribe failed");
     let mut stream = response.into_inner();
 
     // Should receive the message
@@ -123,15 +124,16 @@ async fn test_subscribe_no_delivery_without_credits() {
     let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
 
     // Send init but NO credits
-    tx.send(make_init("credit-topic", "no-credit-group", InitialPosition::Earliest))
-        .await
-        .expect("send init failed");
+    tx.send(make_init(
+        "credit-topic",
+        "no-credit-group",
+        InitialPosition::Earliest,
+    ))
+    .await
+    .expect("send init failed");
 
     // Start subscription
-    let response = client
-        .subscribe(stream)
-        .await
-        .expect("subscribe failed");
+    let response = client.subscribe(stream).await.expect("subscribe failed");
     let mut stream = response.into_inner();
 
     // Should NOT receive any message (no credits)
@@ -182,9 +184,13 @@ async fn test_subscribe_earliest_position() {
     let (tx, rx) = tokio::sync::mpsc::channel::<SubscribeUpstream>(10);
     let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
 
-    tx.send(make_init("earliest-topic", "earliest-group", InitialPosition::Earliest))
-        .await
-        .expect("send init failed");
+    tx.send(make_init(
+        "earliest-topic",
+        "earliest-group",
+        InitialPosition::Earliest,
+    ))
+    .await
+    .expect("send init failed");
     tx.send(make_credit(10)).await.expect("send credits failed");
 
     let response = client.subscribe(stream).await.expect("subscribe failed");
@@ -235,9 +241,13 @@ async fn test_subscribe_latest_position() {
     let (tx, rx) = tokio::sync::mpsc::channel::<SubscribeUpstream>(10);
     let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
 
-    tx.send(make_init("latest-topic", "latest-group", InitialPosition::Latest))
-        .await
-        .expect("send init failed");
+    tx.send(make_init(
+        "latest-topic",
+        "latest-group",
+        InitialPosition::Latest,
+    ))
+    .await
+    .expect("send init failed");
     tx.send(make_credit(10)).await.expect("send credits failed");
 
     let response = client.subscribe(stream).await.expect("subscribe failed");
@@ -245,7 +255,10 @@ async fn test_subscribe_latest_position() {
 
     // Should NOT receive the old message
     let result = timeout(Duration::from_millis(200), stream.next()).await;
-    assert!(result.is_err(), "should not receive old message with LATEST");
+    assert!(
+        result.is_err(),
+        "should not receive old message with LATEST"
+    );
 
     // Publish a NEW message
     let new_msg = client
@@ -294,9 +307,13 @@ async fn test_subscribe_ack_updates_cursor() {
         let (tx, rx) = tokio::sync::mpsc::channel::<SubscribeUpstream>(10);
         let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
 
-        tx.send(make_init("ack-topic", "ack-group", InitialPosition::Earliest))
-            .await
-            .unwrap();
+        tx.send(make_init(
+            "ack-topic",
+            "ack-group",
+            InitialPosition::Earliest,
+        ))
+        .await
+        .unwrap();
         tx.send(make_credit(1)).await.unwrap();
 
         let response = client.subscribe(stream).await.expect("subscribe failed");
@@ -326,9 +343,13 @@ async fn test_subscribe_ack_updates_cursor() {
         let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
 
         // Same consumer group - should resume from cursor
-        tx.send(make_init("ack-topic", "ack-group", InitialPosition::Earliest))
-            .await
-            .unwrap();
+        tx.send(make_init(
+            "ack-topic",
+            "ack-group",
+            InitialPosition::Earliest,
+        ))
+        .await
+        .unwrap();
         tx.send(make_credit(10)).await.unwrap();
 
         let response = client.subscribe(stream).await.expect("subscribe failed");
@@ -369,9 +390,13 @@ async fn test_subscribe_duplicate_ack_is_idempotent() {
     let (tx, rx) = tokio::sync::mpsc::channel::<SubscribeUpstream>(10);
     let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
 
-    tx.send(make_init("dup-ack-topic", "dup-ack-group", InitialPosition::Earliest))
-        .await
-        .unwrap();
+    tx.send(make_init(
+        "dup-ack-topic",
+        "dup-ack-group",
+        InitialPosition::Earliest,
+    ))
+    .await
+    .unwrap();
     tx.send(make_credit(10)).await.unwrap();
 
     let response = client.subscribe(stream).await.expect("subscribe failed");
@@ -456,7 +481,10 @@ async fn test_subscribe_empty_consumer_group_uses_default() {
     .unwrap();
     tx.send(make_credit(10)).await.unwrap();
 
-    let response = client.subscribe(stream).await.expect("subscribe should succeed");
+    let response = client
+        .subscribe(stream)
+        .await
+        .expect("subscribe should succeed");
     let mut stream = response.into_inner();
 
     // Should receive the message

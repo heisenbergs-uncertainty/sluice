@@ -123,9 +123,11 @@ pub fn insert_or_get_topic(conn: &Connection, name: &str, created_at: i64) -> Re
     )?;
 
     // Fetch the ID (either newly created or existing)
-    conn.query_row("SELECT id FROM topics WHERE name = ?1", params![name], |row| {
-        row.get(0)
-    })
+    conn.query_row(
+        "SELECT id FROM topics WHERE name = ?1",
+        params![name],
+        |row| row.get(0),
+    )
 }
 
 /// Get a topic by name.
@@ -369,4 +371,3 @@ mod tests {
         assert_eq!(messages[0].global_seq, 3);
     }
 }
-

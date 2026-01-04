@@ -111,7 +111,10 @@ impl<T> BatchAccumulator<T> {
     /// Drain the batch, returning all accumulated items.
     pub fn drain(&mut self) -> Vec<T> {
         self.batch_start = None;
-        std::mem::replace(&mut self.items, Vec::with_capacity(self.config.max_batch_size))
+        std::mem::replace(
+            &mut self.items,
+            Vec::with_capacity(self.config.max_batch_size),
+        )
     }
 
     /// Check if the batch is empty.
@@ -162,4 +165,3 @@ mod tests {
         assert!(batch.is_ready());
     }
 }
-

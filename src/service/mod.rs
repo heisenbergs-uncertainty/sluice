@@ -3,6 +3,7 @@
 pub mod publish;
 pub mod registry;
 pub mod subscribe;
+pub mod topics;
 
 pub use registry::{ConnectionRegistry, ConsumerGroupKey};
 
@@ -13,7 +14,8 @@ use tonic::{Request, Response, Status, Streaming};
 
 use crate::proto::sluice::v1::sluice_server::Sluice;
 use crate::proto::sluice::v1::{
-    PublishRequest, PublishResponse, SubscribeDownstream, SubscribeUpstream,
+    ListTopicsRequest, ListTopicsResponse, PublishRequest, PublishResponse, SubscribeDownstream,
+    SubscribeUpstream,
 };
 use crate::server::ServerState;
 
@@ -48,5 +50,12 @@ impl Sluice for SluiceService {
         request: Request<Streaming<SubscribeUpstream>>,
     ) -> Result<Response<Self::SubscribeStream>, Status> {
         subscribe::handle_subscribe(&self.state, request).await
+    }
+
+    async fn list_topics(
+        &self,
+        request: Request<ListTopicsRequest>,
+    ) -> Result<Response<ListTopicsResponse>, Status> {
+        topics::handle_list_topics(&self.state, request).await
     }
 }

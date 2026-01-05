@@ -62,6 +62,20 @@ impl ReaderPool {
     pub fn state(&self) -> r2d2::State {
         self.pool.state()
     }
+
+    /// List topics known to the server.
+    ///
+    /// Returns topics in lexicographic order by name for stable UI ordering.
+    pub fn list_topics(&self) -> Result<Vec<(String, i64)>, ReaderError> {
+        let conn = self.get()?;
+        let mut stmt = conn.prepare("SELECT name, created_at FROM topics ORDER BY name ASC")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
 }
 
 /// Connection customizer that applies reader pragmas.

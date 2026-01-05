@@ -7,71 +7,88 @@ service Sluice {
   // Returns only after the message is fsync'd to the WAL.
   rpc Publish(PublishRequest) returns (PublishResponse) {}
 
+  // Unary ListTopics: Topic discovery for interactive clients.
+  // Returns an ordered list for stable UI rendering.
+  rpc ListTopics(ListTopicsRequest) returns (ListTopicsResponse) {}
+
   // Bidirectional Streaming Subscribe:
   // Client sends: SubscribeRequest (init), then Credit/Ack messages.
   // Server sends: MessageDelivery.
   rpc Subscribe (stream SubscribeUpstream) returns (stream SubscribeDownstream);
 }
 
+message ListTopicsRequest {
+  // No fields for MVP.
+}
+
+message ListTopicsResponse {
+  repeated Topic topics = 1;
+}
+
+message Topic {
+  string name = 1;
+  // Unix timestamp (milliseconds)
+  int64 created_at = 2;
+}
+
 message PublishRequest {
   // The target topic. Created automatically if it doesn't exist (MVP feature).
   string topic = 1;
-  
+
   // The opaque payload. Sluice does not inspect this.
   bytes payload = 2;
-  
+
   // Structured headers for tracing (W3C Trace Context) and application metadata.
   map<string, string> attributes = 3;
 }
 
 message PublishResponse {
   // UUIDv7 (Time-sortable) assigned by the server.
-  string message_id = 1; 
-  
+  string message_id = 1;
+
   // The local monotonic sequence number for this topic.
-  uint64 sequence = 2;   
-  
+  uint64 sequence = 2;
+
   // Server-side timestamp (Unix epoch ms).
   int64 timestamp = 3;
 }
-
 
 message SubscribeUpstream {
   oneof request {
     // Sent exactly once as the first message to initialize the stream.
     SubscriptionInit init = 1;
-    
+
     // Sent periodically to permit more data delivery.
     CreditGrant credit = 2;
-    
+
     // Sent to confirm processing, allowing the server to advance the cursor.
     Ack ack = 3;
   }
 }
 
 message SubscriptionInit {
-  string topic = 1;
-  string consumer_group = 2; // "default" for MVP if not specified.
-  string consumer_id = 3; // Optional, for debugging/logging.
+  string          topic            = 1;
+  string          consumer_group   = 2; // "default" for MVP if not specified.
+  string          consumer_id      = 3; // Optional, for debugging/logging.
   InitialPosition initial_position = 4;
 }
 
 enum InitialPosition {
-  LATEST = 0; // Start from new messages only.
+  LATEST   = 0; // Start from new messages only.
   EARLIEST = 1; // Start from the oldest available message.
 }
 
 message CreditGrant {
   // The number of messages the client is willing to accept.
   // This is additive. Sending 5 then 5 means the server has 10 credits.
-  uint32 credits = 1; 
+  uint32 credits = 1;
 }
 
 message Ack {
   // The message_id being acknowledged.
-  // Sluice MVP treats ACKs as cumulative for the cursor, 
+  // Sluice MVP treats ACKs as cumulative for the cursor,
   // but idempotent for individual message tracking.
-  string message_id = 1; 
+  string message_id = 1;
 }
 
 message SubscribeDownstream {
@@ -82,9 +99,9 @@ message SubscribeDownstream {
 }
 
 message MessageDelivery {
-  string message_id = 1;
-  uint64 sequence = 2;
-  bytes payload = 3;
+  string              message_id = 1;
+  uint64              sequence   = 2;
+  bytes               payload    = 3;
   map<string, string> attributes = 4;
-  int64 timestamp = 5;
+  int64               timestamp  = 5;
 }

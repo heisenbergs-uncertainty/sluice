@@ -38,11 +38,11 @@ These bindings define “vim-like / keyboard-driven” MVP behavior (FR-003) and
 
 **⚠️ CRITICAL**: No lazysluice story can meet the topic-list requirement until this phase is complete.
 
-- [ ] T007 Add `ListTopics` RPC and messages to proto/sluice/v1/sluice.proto (additive only; keep existing Publish/Subscribe unchanged)
-- [ ] T011 Add gRPC contract test for ListTopics in tests/list_topics_test.rs (expected RED until server implementation exists)
-- [ ] T008 Wire new server handler module in src/service/mod.rs (declare + route `list_topics`)
-- [ ] T010 Implement storage query to list topics in src/storage/reader.rs (read `topics` table name + created_at)
-- [ ] T009 Implement ListTopics service logic in src/service/topics.rs (return lexicographically sorted topics)
+- [X] T007 Add `ListTopics` RPC and messages to proto/sluice/v1/sluice.proto (additive only; keep existing Publish/Subscribe unchanged)
+- [X] T011 Add gRPC contract test for ListTopics in tests/list_topics_test.rs (expected RED until server implementation exists)
+- [X] T008 Wire new server handler module in src/service/mod.rs (declare + route `list_topics`)
+- [X] T010 Implement storage query to list topics in src/storage/reader.rs (read `topics` table name + created_at)
+- [X] T009 Implement ListTopics service logic in src/service/topics.rs (return lexicographically sorted topics)
 
 **Checkpoint**: Foundation ready — lazysluice can now reliably populate the topic picker.
 

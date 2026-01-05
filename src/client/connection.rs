@@ -6,10 +6,10 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint};
 
+use crate::client::PublishResponse;
 use crate::proto::sluice::v1::sluice_client::SluiceClient as ProtoClient;
 use crate::proto::sluice::v1::{ListTopicsRequest, PublishRequest, Topic};
 
-use super::ops::PublishResult;
 use super::subscription::Subscription;
 use crate::proto::sluice::v1::InitialPosition;
 
@@ -135,7 +135,7 @@ impl SluiceClient {
     }
 
     /// Publish a message to a topic.
-    pub async fn publish(&mut self, topic: &str, payload: Vec<u8>) -> Result<PublishResult> {
+    pub async fn publish(&mut self, topic: &str, payload: Vec<u8>) -> Result<PublishResponse> {
         let resp = self
             .inner
             .publish(PublishRequest {
@@ -147,14 +147,15 @@ impl SluiceClient {
             .context("publish RPC failed")?
             .into_inner();
 
-        Ok(PublishResult {
+        Ok(PublishResponse {
+            timestamp: resp.timestamp,
             message_id: resp.message_id,
             sequence: resp.sequence,
         })
     }
 
     /// Publish a message with string payload (convenience method).
-    pub async fn publish_str(&mut self, topic: &str, payload: &str) -> Result<PublishResult> {
+    pub async fn publish_str(&mut self, topic: &str, payload: &str) -> Result<PublishResponse> {
         self.publish(topic, payload.as_bytes().to_vec()).await
     }
 

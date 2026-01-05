@@ -4,11 +4,9 @@
 //! used by both the `lazysluice` TUI and the `sluicectl` CLI.
 
 mod connection;
-mod ops;
 mod subscription;
 
 pub use connection::{ConnectConfig, SluiceClient};
-pub use ops::PublishResult;
 pub use subscription::Subscription;
 
 // Re-export proto types that clients need

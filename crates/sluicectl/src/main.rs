@@ -15,7 +15,12 @@ use clap::{Parser, Subcommand};
 #[command(propagate_version = true)]
 struct Cli {
     /// Sluice server endpoint (e.g., http://localhost:50051)
-    #[arg(short, long, env = "SLUICE_ENDPOINT", default_value = "http://localhost:50051")]
+    #[arg(
+        short,
+        long,
+        env = "SLUICE_ENDPOINT",
+        default_value = "http://localhost:50051"
+    )]
     endpoint: String,
 
     /// Path to TLS CA certificate (required for https:// endpoints)
@@ -136,14 +141,7 @@ async fn main() -> Result<()> {
             auto_ack,
         } => {
             commands::subscribe::run(
-                config,
-                &topic,
-                &group,
-                &position,
-                credits,
-                count,
-                auto_ack,
-                cli.output,
+                config, &topic, &group, &position, credits, count, auto_ack, cli.output,
             )
             .await?;
         }

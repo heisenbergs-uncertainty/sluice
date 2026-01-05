@@ -6,6 +6,12 @@ description = "A gRPC-native message broker with credit-based flow control"
 authors = ["Sluice Authors"]
 license = "MIT OR Apache-2.0"
 
+[workspace]
+members = [
+	"crates/lazysluice",
+]
+resolver = "2"
+
 [dependencies]
 # gRPC and protobuf
 tonic = "0.12"

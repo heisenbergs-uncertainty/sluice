@@ -23,13 +23,12 @@ These bindings define “vim-like / keyboard-driven” MVP behavior (FR-003) and
 ## Phase 1: Setup (Shared Infrastructure)
 
 **Purpose**: Establish workspace + new crate skeleton without changing server behavior.
-
-- [ ] T001 Update root Cargo workspace members in Cargo.toml (add `crates/lazysluice` while preserving existing `sluice` package)
-- [ ] T002 [P] Create lazysluice crate manifest in crates/lazysluice/Cargo.toml (bin + deps: ratatui/crossterm/tokio/tonic/prost/clap/anyhow/tracing)
-- [ ] T003 [P] Add proto codegen for lazysluice in crates/lazysluice/build.rs (compile from ../../proto/sluice/v1/sluice.proto)
-- [ ] T004 [P] Add lazysluice entrypoint + CLI args in crates/lazysluice/src/main.rs (`--endpoint`, `--tls-ca <path>` optional, `--tls-domain <dns>` optional, `--credits-window <n>`)
-- [ ] T005 [P] Create TUI module skeletons in crates/lazysluice/src/{app,ui,controller,events}.rs
-- [ ] T006 [P] Create gRPC wrapper module skeletons in crates/lazysluice/src/grpc/{mod,client}.rs
+- [X] T001 Update root Cargo workspace members in Cargo.toml (add `crates/lazysluice` while preserving existing `sluice` package)
+- [X] T002 [P] Create lazysluice crate manifest in crates/lazysluice/Cargo.toml (bin + deps: ratatui/crossterm/tokio/tonic/prost/clap/anyhow/tracing)
+- [X] T003 [P] Add proto codegen for lazysluice in crates/lazysluice/build.rs (compile from ../../proto/sluice/v1/sluice.proto)
+- [X] T004 [P] Add lazysluice entrypoint + CLI args in crates/lazysluice/src/main.rs (`--endpoint`, `--tls-ca <path>` optional, `--tls-domain <dns>` optional, `--credits-window <n>`)
+- [X] T005 [P] Create TUI module skeletons in crates/lazysluice/src/{app,ui,controller,events}.rs
+- [X] T006 [P] Create gRPC wrapper module skeletons in crates/lazysluice/src/grpc/{mod,client}.rs
 
 ---
 

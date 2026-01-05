@@ -5,6 +5,7 @@ mod app;
 mod controller;
 mod events;
 mod grpc;
+mod proto;
 mod ui;
 
 #[derive(Parser, Debug)]
@@ -43,4 +44,32 @@ async fn main() -> Result<()> {
 
     // TUI implementation will be wired in subsequent tasks.
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn endpoint_defaults_to_localhost() {
+        let args = Args::try_parse_from(["lazysluice"]).expect("parse should succeed");
+        assert_eq!(args.endpoint, "http://localhost:50051");
+        assert_eq!(args.credits_window, 128);
+        assert!(args.tls_ca.is_none());
+        assert!(args.tls_domain.is_none());
+    }
+
+    #[test]
+    fn endpoint_flag_overrides_default() {
+        let args = Args::try_parse_from([
+            "lazysluice",
+            "--endpoint",
+            "http://127.0.0.1:12345",
+            "--credits-window",
+            "7",
+        ])
+        .expect("parse should succeed");
+        assert_eq!(args.endpoint, "http://127.0.0.1:12345");
+        assert_eq!(args.credits_window, 7);
+    }
 }

@@ -56,13 +56,13 @@ These bindings define “vim-like / keyboard-driven” MVP behavior (FR-003) and
 
 ### Tests for User Story 1
 
-- [ ] T012 [P] [US1] Add unit test for endpoint parsing/defaults in crates/lazysluice/src/main.rs
-- [ ] T013 [P] [US1] Add unit test for reconnect/backoff timing policy in crates/lazysluice/src/controller.rs
+-- [X] T012 [P] [US1] Add unit test for endpoint parsing/defaults in crates/lazysluice/src/main.rs
+-- [X] T013 [P] [US1] Add unit test for reconnect/backoff timing policy in crates/lazysluice/src/controller.rs
 
 ### Implementation for User Story 1
 
-- [ ] T014 [P] [US1] Implement gRPC connect + optional TLS configuration in crates/lazysluice/src/grpc/client.rs (TLS is enabled when endpoint scheme is `https://`; `--tls-ca` is required for TLS; if endpoint is `http://` then TLS flags are rejected with a clear error)
-- [ ] T015 [P] [US1] Implement `list_topics()` call in crates/lazysluice/src/grpc/client.rs
+-- [X] T014 [P] [US1] Implement gRPC connect + optional TLS configuration in crates/lazysluice/src/grpc/client.rs (TLS is enabled when endpoint scheme is `https://`; `--tls-ca` is required for TLS; if endpoint is `http://` then TLS flags are rejected with a clear error)
+-- [X] T015 [P] [US1] Implement `list_topics()` call in crates/lazysluice/src/grpc/client.rs
 - [ ] T016 [US1] Implement crossterm event stream + tick events in crates/lazysluice/src/events.rs
 - [ ] T017 [US1] Implement app state for connection + topic list in crates/lazysluice/src/app.rs
 - [ ] T018 [US1] Implement topic list screen rendering in crates/lazysluice/src/ui.rs

@@ -1468,37 +1468,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
 
 [[package]]
-name = "sluice"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "futures",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "prost",
- "prost-types",
- "r2d2",
- "r2d2_sqlite",
- "rusqlite",
- "serde",
- "serde_json",
- "sluice-proto",
- "tempfile",
- "thiserror 2.0.17",
- "tokio",
- "tokio-stream",
- "tokio-test",
- "tokio-util",
- "tonic",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "sluice-client"
 version = "0.1.0"
 dependencies = [
@@ -1520,6 +1489,38 @@ dependencies = [
  "prost-types",
  "tonic",
  "tonic-build",
+]
+
+[[package]]
+name = "sluice-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "futures",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "prost",
+ "prost-types",
+ "r2d2",
+ "r2d2_sqlite",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sluice-client",
+ "sluice-proto",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-stream",
+ "tokio-test",
+ "tokio-util",
+ "tonic",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

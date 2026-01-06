@@ -6,7 +6,7 @@
 
 mod common;
 
-use sluice::proto::sluice::v1::PublishRequest;
+use sluice_server::proto::sluice::v1::PublishRequest;
 use std::collections::HashMap;
 
 /// Helper to create a publish request.

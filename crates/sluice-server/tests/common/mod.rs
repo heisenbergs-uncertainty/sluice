@@ -12,14 +12,14 @@ use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::watch;
 
-use sluice::config::Config;
-use sluice::flow::notify::NotificationBus;
-use sluice::proto::sluice::v1::sluice_client::SluiceClient;
-use sluice::proto::sluice::v1::sluice_server::SluiceServer;
-use sluice::server::ServerState;
-use sluice::service::{ConnectionRegistry, SluiceService};
-use sluice::storage::reader::ReaderPool;
-use sluice::storage::writer::Writer;
+use sluice_server::config::Config;
+use sluice_server::flow::notify::NotificationBus;
+use sluice_proto::sluice::v1::sluice_client::SluiceClient;
+use sluice_proto::sluice::v1::sluice_server::SluiceServer;
+use sluice_server::server::ServerState;
+use sluice_server::service::{ConnectionRegistry, SluiceService};
+use sluice_server::storage::reader::ReaderPool;
+use sluice_server::storage::writer::Writer;
 use tonic::transport::{Channel, Server};
 
 /// Test fixture that manages a temporary database directory.

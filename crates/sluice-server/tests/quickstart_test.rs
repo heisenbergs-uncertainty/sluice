@@ -13,7 +13,7 @@
 mod common;
 
 use futures::StreamExt;
-use sluice::proto::sluice::v1::{
+use sluice_server::proto::sluice::v1::{
     subscribe_downstream::Response as DownstreamResponse,
     subscribe_upstream::Request as UpstreamRequest, Ack, CreditGrant, InitialPosition,
     PublishRequest, SubscribeUpstream, SubscriptionInit,

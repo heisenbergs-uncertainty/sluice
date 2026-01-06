@@ -7,7 +7,7 @@
 mod common;
 
 use futures::StreamExt;
-use sluice::proto::sluice::v1::{
+use sluice_server::proto::sluice::v1::{
     subscribe_downstream::Response as DownstreamResponse,
     subscribe_upstream::Request as UpstreamRequest, Ack, CreditGrant, InitialPosition,
     PublishRequest, SubscribeUpstream, SubscriptionInit,
@@ -64,7 +64,7 @@ async fn test_message_survives_restart() {
 
     // Phase 1: Start server, publish message, shutdown
     {
-        let config = sluice::config::Config {
+        let config = sluice_server::config::Config {
             data_dir: data_dir.clone(),
             ..Default::default()
         };
@@ -86,7 +86,7 @@ async fn test_message_survives_restart() {
 
     // Phase 2: Start new server on same database, verify message exists
     {
-        let config = sluice::config::Config {
+        let config = sluice_server::config::Config {
             data_dir,
             ..Default::default()
         };
@@ -143,7 +143,7 @@ async fn test_cursor_persists_across_restart() {
 
     // Phase 1: Publish messages, consume and ACK first one
     {
-        let config = sluice::config::Config {
+        let config = sluice_server::config::Config {
             data_dir: data_dir.clone(),
             ..Default::default()
         };
@@ -193,7 +193,7 @@ async fn test_cursor_persists_across_restart() {
 
     // Phase 2: Restart and verify we resume from message 2
     {
-        let config = sluice::config::Config {
+        let config = sluice_server::config::Config {
             data_dir,
             ..Default::default()
         };

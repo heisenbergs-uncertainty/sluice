@@ -6,7 +6,7 @@
 
 mod common;
 
-use sluice::proto::sluice::v1::PublishRequest;
+use sluice_server::proto::sluice::v1::PublishRequest;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -26,7 +26,7 @@ fn make_publish_request(topic: &str, payload: &[u8]) -> PublishRequest {
 /// batch delay timeout.
 #[tokio::test]
 async fn test_publish_throughput_5000_msgs_per_second() {
-    use sluice::proto::sluice::v1::sluice_client::SluiceClient;
+    use sluice_server::proto::sluice::v1::sluice_client::SluiceClient;
 
     let server = common::TestServer::start().await;
     let addr = format!("http://{}", server.addr);
@@ -102,7 +102,7 @@ async fn test_publish_throughput_5000_msgs_per_second() {
 /// T067 variant: Batch publish throughput with higher concurrency.
 #[tokio::test]
 async fn test_concurrent_publish_throughput() {
-    use sluice::proto::sluice::v1::sluice_client::SluiceClient;
+    use sluice_server::proto::sluice::v1::sluice_client::SluiceClient;
 
     let server = common::TestServer::start().await;
     let addr = format!("http://{}", server.addr);

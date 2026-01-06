@@ -5,7 +5,7 @@
 
 mod common;
 
-use sluice::proto::sluice::v1::{ListTopicsRequest, PublishRequest};
+use sluice_server::proto::sluice::v1::{ListTopicsRequest, PublishRequest};
 use std::collections::HashMap;
 
 fn make_publish(topic: &str, payload: &[u8]) -> PublishRequest {

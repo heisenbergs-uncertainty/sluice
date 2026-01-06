@@ -75,10 +75,17 @@ fn draw_topic_list(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 fn draw_tail(frame: &mut Frame, area: Rect, state: &AppState) {
+    use sluice_client::InitialPosition;
+
+    let position_indicator = match state.initial_position {
+        InitialPosition::Earliest => "EARLIEST",
+        InitialPosition::Latest => "LATEST",
+    };
+
     let title = if state.paused {
-        "Tail [PAUSED]"
+        format!("Tail [PAUSED | {}]", position_indicator)
     } else {
-        "Tail"
+        format!("Tail [{}]", position_indicator)
     };
 
     let items: Vec<ListItem> = state
@@ -86,18 +93,25 @@ fn draw_tail(frame: &mut Frame, area: Rect, state: &AppState) {
         .iter()
         .enumerate()
         .map(|(i, m)| {
-            let ack_marker = if state.acked_ids.contains(&m.message_id) {
-                "✓ "
-            } else {
-                "  "
-            };
+            let is_acked = state.acked_ids.contains(&m.message_id);
+            let ack_marker = if is_acked { "✓ " } else { "  " };
             let payload = render_payload(&m.payload);
             let line = format!(
                 "{}[{}] seq={} ts={} {}",
                 ack_marker, m.message_id, m.sequence, m.timestamp, payload
             );
+
+            // Apply color: green for acked, selection highlight if cursor, or default
             let style = if i == state.message_cursor {
-                Style::default().add_modifier(Modifier::REVERSED)
+                if is_acked {
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                }
+            } else if is_acked {
+                Style::default().fg(Color::Green)
             } else {
                 Style::default()
             };
@@ -110,6 +124,8 @@ fn draw_tail(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 fn draw_publish(frame: &mut Frame, area: Rect, state: &AppState) {
+    use crate::app::PublishInputField;
+
     let status_style = if state
         .publish_status
         .as_ref()
@@ -128,14 +144,37 @@ fn draw_publish(frame: &mut Frame, area: Rect, state: &AppState) {
         "Enter topic and payload"
     };
 
+    // Highlight active field
+    let topic_style = if state.publish_active_field == PublishInputField::Topic {
+        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Cyan)
+    };
+
+    let payload_style = if state.publish_active_field == PublishInputField::Payload {
+        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Cyan)
+    };
+
     let text = vec![
         Line::from(vec![
             Span::raw("Topic: "),
-            Span::styled(&state.publish_topic, Style::default().fg(Color::Cyan)),
+            Span::styled(&state.publish_topic, topic_style),
+            if state.publish_active_field == PublishInputField::Topic {
+                Span::styled(" ◄", Style::default().fg(Color::Green))
+            } else {
+                Span::raw("")
+            },
         ]),
         Line::from(vec![
             Span::raw("Payload: "),
-            Span::styled(&state.publish_payload, Style::default().fg(Color::Cyan)),
+            Span::styled(&state.publish_payload, payload_style),
+            if state.publish_active_field == PublishInputField::Payload {
+                Span::styled(" ◄", Style::default().fg(Color::Green))
+            } else {
+                Span::raw("")
+            },
         ]),
         Line::from(""),
         Line::from(Span::styled(
@@ -144,7 +183,7 @@ fn draw_publish(frame: &mut Frame, area: Rect, state: &AppState) {
         )),
         Line::from(""),
         Line::from(Span::styled(
-            "Type to edit payload, Backspace to delete",
+            "Tab to switch fields, Enter to send, Esc to cancel",
             Style::default().fg(Color::DarkGray),
         )),
     ];
@@ -155,15 +194,29 @@ fn draw_publish(frame: &mut Frame, area: Rect, state: &AppState) {
 
 fn draw_help(frame: &mut Frame, area: Rect) {
     let text = r#"
+  GLOBAL
   q        Quit
   ?        Toggle help
-  Tab      Cycle views
+  Tab      Cycle views / Switch fields in publish
+
+  NAVIGATION
   j / ↓    Move selection down
   k / ↑    Move selection up
+
+  TOPIC LIST
   Enter    Select topic / start tail
   p        Jump to Publish view
+
+  TAIL VIEW
   Space    Pause/resume tail
   a        Ack selected message
+  e        Subscribe from Earliest (history)
+  l        Subscribe from Latest (new only)
+
+  PUBLISH VIEW
+  Tab      Switch between Topic/Payload fields
+  Enter    Send message
+  Esc      Return to topic list
 "#;
     let para = Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Help"));
     frame.render_widget(para, area);

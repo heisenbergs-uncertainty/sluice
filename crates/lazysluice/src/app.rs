@@ -1,6 +1,6 @@
 //! Application state for lazysluice TUI.
 
-use sluice_client::{MessageDelivery, Topic};
+use sluice_client::{InitialPosition, MessageDelivery, Topic};
 
 /// Current screen/mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -10,6 +10,14 @@ pub enum Screen {
     Tail,
     Publish,
     Help,
+}
+
+/// Active field in publish screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PublishInputField {
+    #[default]
+    Topic,
+    Payload,
 }
 
 /// Connection status.
@@ -36,11 +44,14 @@ pub struct AppState {
     pub messages: Vec<MessageDelivery>,
     pub message_cursor: usize,
     pub paused: bool,
+    pub initial_position: InitialPosition,
+    pub current_topic: Option<String>,  // Track which topic we're subscribed to
 
     // Publish draft
     pub publish_topic: String,
     pub publish_payload: String,
     pub publish_status: Option<String>,
+    pub publish_active_field: PublishInputField,
 
     // Help overlay toggle (only applies when screen != Help)
     pub show_help: bool,
@@ -57,6 +68,7 @@ impl AppState {
     pub fn new(credits_window: u32) -> Self {
         Self {
             credits_window,
+            initial_position: InitialPosition::Earliest,
             ..Default::default()
         }
     }
@@ -72,6 +84,37 @@ impl AppState {
     /// Validate publish input: both topic and payload must be non-empty.
     pub fn can_publish(&self) -> bool {
         !self.publish_topic.trim().is_empty() && !self.publish_payload.trim().is_empty()
+    }
+
+    /// Toggle between Earliest and Latest subscription positions.
+    pub fn toggle_initial_position(&mut self) {
+        self.initial_position = match self.initial_position {
+            InitialPosition::Earliest => InitialPosition::Latest,
+            InitialPosition::Latest => InitialPosition::Earliest,
+        };
+    }
+
+    /// Cycle between Topic and Payload fields in publish screen.
+    pub fn cycle_publish_field(&mut self) {
+        self.publish_active_field = match self.publish_active_field {
+            PublishInputField::Topic => PublishInputField::Payload,
+            PublishInputField::Payload => PublishInputField::Topic,
+        };
+    }
+
+    /// Check if a message with the given ID already exists.
+    pub fn has_message(&self, message_id: &str) -> bool {
+        self.messages.iter().any(|m| m.message_id == message_id)
+    }
+
+    /// Add a message only if it doesn't already exist (prevent duplicates).
+    pub fn add_message_if_new(&mut self, msg: MessageDelivery) -> bool {
+        if !self.has_message(&msg.message_id) {
+            self.messages.push(msg);
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -123,5 +166,88 @@ mod tests {
         // Multiple IDs can be tracked
         state.acked_ids.insert("msg-002".to_string());
         assert_eq!(state.acked_ids.len(), 2);
+    }
+
+    #[test]
+    fn initial_position_defaults_to_earliest() {
+        let state = AppState::new(128);
+        assert_eq!(state.initial_position, InitialPosition::Earliest);
+    }
+
+    #[test]
+    fn can_toggle_initial_position() {
+        let mut state = AppState::new(128);
+
+        // Start at Earliest
+        assert_eq!(state.initial_position, InitialPosition::Earliest);
+
+        // Toggle to Latest
+        state.toggle_initial_position();
+        assert_eq!(state.initial_position, InitialPosition::Latest);
+
+        // Toggle back to Earliest
+        state.toggle_initial_position();
+        assert_eq!(state.initial_position, InitialPosition::Earliest);
+    }
+
+    #[test]
+    fn publish_active_field_defaults_to_topic() {
+        let state = AppState::new(128);
+        assert_eq!(state.publish_active_field, PublishInputField::Topic);
+    }
+
+    #[test]
+    fn can_cycle_publish_fields() {
+        let mut state = AppState::new(128);
+
+        // Start at Topic
+        assert_eq!(state.publish_active_field, PublishInputField::Topic);
+
+        // Tab to Payload
+        state.cycle_publish_field();
+        assert_eq!(state.publish_active_field, PublishInputField::Payload);
+
+        // Tab back to Topic
+        state.cycle_publish_field();
+        assert_eq!(state.publish_active_field, PublishInputField::Topic);
+    }
+
+    #[test]
+    fn detects_duplicate_messages() {
+        let mut state = AppState::new(128);
+
+        let msg1 = MessageDelivery {
+            message_id: "msg-001".to_string(),
+            sequence: 1,
+            payload: vec![1, 2, 3],
+            attributes: Default::default(),
+            timestamp: 12345,
+        };
+
+        let msg2 = MessageDelivery {
+            message_id: "msg-002".to_string(),
+            sequence: 2,
+            payload: vec![4, 5, 6],
+            attributes: Default::default(),
+            timestamp: 12346,
+        };
+
+        // Initially no messages
+        assert!(!state.has_message("msg-001"));
+        assert_eq!(state.messages.len(), 0);
+
+        // Add first message
+        assert!(state.add_message_if_new(msg1.clone()));
+        assert_eq!(state.messages.len(), 1);
+        assert!(state.has_message("msg-001"));
+
+        // Try to add same message again - should be rejected
+        assert!(!state.add_message_if_new(msg1.clone()));
+        assert_eq!(state.messages.len(), 1); // Still 1
+
+        // Add different message - should succeed
+        assert!(state.add_message_if_new(msg2));
+        assert_eq!(state.messages.len(), 2);
+        assert!(state.has_message("msg-002"));
     }
 }

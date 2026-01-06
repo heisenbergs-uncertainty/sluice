@@ -92,7 +92,7 @@ impl Controller {
                     &topic,
                     None, // consumer_group: default
                     None, // consumer_id
-                    InitialPosition::Latest,
+                    self.state.initial_position,
                     self.state.credits_window,
                 )
                 .await
@@ -102,6 +102,7 @@ impl Controller {
                     self.subscription = Some(sub);
                     self.state.messages.clear();
                     self.state.message_cursor = 0;
+                    self.state.current_topic = Some(topic.clone());  // Track subscribed topic
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "Failed to start subscription");
@@ -124,13 +125,16 @@ impl Controller {
             // Try to get next message with a short timeout
             match tokio::time::timeout(Duration::from_millis(10), sub.next_message()).await {
                 Ok(Ok(Some(msg))) => {
-                    self.state.messages.push(msg);
-                    // Auto-scroll to latest if cursor is at end
-                    if self.state.message_cursor + 1 >= self.state.messages.len().saturating_sub(1)
-                    {
-                        self.state.message_cursor = self.state.messages.len().saturating_sub(1);
+                    // Only add if not a duplicate (prevents double-display on reconnect)
+                    let is_new = self.state.add_message_if_new(msg);
+                    if is_new {
+                        // Auto-scroll to latest if cursor is at end
+                        if self.state.message_cursor + 1 >= self.state.messages.len().saturating_sub(1)
+                        {
+                            self.state.message_cursor = self.state.messages.len().saturating_sub(1);
+                        }
                     }
-                    return true;
+                    return is_new;  // Return true if new, false if duplicate
                 }
                 Ok(Ok(None)) => {
                     // Stream ended
@@ -179,15 +183,17 @@ impl Controller {
             if should_reconnect {
                 self.last_reconnect = Some(std::time::Instant::now());
 
-                // Save topic for potential subscription restart
-                let topic = self.state.publish_topic.clone();
+                // Save topic for potential subscription restart (use the actual subscribed topic, not publish_topic)
+                let topic = self.state.current_topic.clone();
 
                 // Attempt to reconnect
                 self.connect().await;
 
                 // If connected and we had a topic, restart subscription
-                if matches!(self.state.conn_status, ConnStatus::Connected) && !topic.is_empty() {
-                    self.start_subscription(topic).await;
+                if matches!(self.state.conn_status, ConnStatus::Connected) {
+                    if let Some(topic_name) = topic {
+                        self.start_subscription(topic_name).await;
+                    }
                 }
             }
         }
@@ -245,24 +251,63 @@ impl Controller {
                     }
                 }
             }
+            KeyCode::Char('e') => {
+                if self.state.screen == Screen::Tail {
+                    self.state.initial_position = InitialPosition::Earliest;
+                    // Restart subscription with new position if we have a topic
+                    if let Some(topic) = self.state.selected_topic().cloned() {
+                        self.start_subscription(topic.name).await;
+                    }
+                }
+            }
+            KeyCode::Char('l') => {
+                if self.state.screen == Screen::Tail {
+                    self.state.initial_position = InitialPosition::Latest;
+                    // Restart subscription with new position if we have a topic
+                    if let Some(topic) = self.state.selected_topic().cloned() {
+                        self.start_subscription(topic.name).await;
+                    }
+                }
+            }
             _ => {}
         }
         true
     }
 
     async fn handle_publish_key(&mut self, code: KeyCode) -> bool {
+        use crate::app::PublishInputField;
+
         match code {
             KeyCode::Char('q') => return false,
-            KeyCode::Esc | KeyCode::Tab => {
+            KeyCode::Esc => {
                 self.state.screen = Screen::TopicList;
             }
+            KeyCode::Tab => {
+                // Cycle between Topic and Payload fields
+                self.state.cycle_publish_field();
+            }
             KeyCode::Char(c) => {
-                // Add character to payload
-                self.state.publish_payload.push(c);
+                // Add character to active field
+                match self.state.publish_active_field {
+                    PublishInputField::Topic => {
+                        self.state.publish_topic.push(c);
+                    }
+                    PublishInputField::Payload => {
+                        self.state.publish_payload.push(c);
+                    }
+                }
                 self.state.publish_status = None;
             }
             KeyCode::Backspace => {
-                self.state.publish_payload.pop();
+                // Delete from active field
+                match self.state.publish_active_field {
+                    PublishInputField::Topic => {
+                        self.state.publish_topic.pop();
+                    }
+                    PublishInputField::Payload => {
+                        self.state.publish_payload.pop();
+                    }
+                }
                 self.state.publish_status = None;
             }
             KeyCode::Enter => {

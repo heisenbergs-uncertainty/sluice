@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use serde::Serialize;
-use sluice::client::{ConnectConfig, SluiceClient};
+use sluice_client::{ConnectConfig, SluiceClient};
 
 use crate::OutputFormat;
 

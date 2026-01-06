@@ -115,7 +115,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Build connection config
-    let config = sluice::client::ConnectConfig {
+    let config = sluice_client::ConnectConfig {
         endpoint: cli.endpoint,
         tls_ca: cli.tls_ca,
         tls_domain: cli.tls_domain,

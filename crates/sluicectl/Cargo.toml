@@ -6,8 +6,8 @@ description = "Command-line interface for Sluice message broker"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-# Core sluice library for client
-sluice = { path = "../.." }
+# Sluice client library
+sluice-client = { path = "../sluice-client" }
 
 # CLI
 clap = { version = "4", features = ["derive", "env"] }

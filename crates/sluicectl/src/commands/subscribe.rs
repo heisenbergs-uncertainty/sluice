@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
-use sluice::client::{ConnectConfig, InitialPosition, SluiceClient};
+use sluice_client::{ConnectConfig, InitialPosition, SluiceClient};
 use tokio::signal;
 
 use crate::OutputFormat;

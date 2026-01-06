@@ -7,7 +7,7 @@ authors = ["Sluice Authors"]
 license = "MIT OR Apache-2.0"
 
 [workspace]
-members = ["crates/sluice-proto", "crates/lazysluice", "crates/sluicectl"]
+members = ["crates/sluice-proto", "crates/sluice-client", "crates/lazysluice", "crates/sluicectl"]
 resolver = "2"
 
 [dependencies]

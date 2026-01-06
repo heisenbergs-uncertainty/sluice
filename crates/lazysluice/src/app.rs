@@ -1,6 +1,6 @@
 //! Application state for lazysluice TUI.
 
-use sluice::client::{MessageDelivery, Topic};
+use sluice_client::{MessageDelivery, Topic};
 
 /// Current screen/mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

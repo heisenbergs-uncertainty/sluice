@@ -4,7 +4,7 @@ use std::fs;
 
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
-use sluice::client::{ConnectConfig, SluiceClient};
+use sluice_client::{ConnectConfig, SluiceClient};
 
 use crate::OutputFormat;
 

@@ -4,7 +4,7 @@ use crossterm::event::KeyCode;
 
 use crate::app::{AppState, ConnStatus, Screen};
 use crate::events::Event;
-use sluice::client::{InitialPosition, SluiceClient, Subscription};
+use sluice_client::{InitialPosition, SluiceClient, Subscription};
 
 /// Controller: owns app state and mutates it in response to events.
 pub struct Controller {

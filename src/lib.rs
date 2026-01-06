@@ -33,7 +33,6 @@
     clippy::too_many_lines              // Some functions are inherently long
 )]
 
-pub mod client;
 pub mod config;
 pub mod flow;
 pub mod observability;

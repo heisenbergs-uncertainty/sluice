@@ -1,0 +1,30 @@
+[package]
+name = "sluice-client"
+version = "0.1.0"
+edition = "2021"
+description = "Client library for Sluice message broker"
+authors = ["Sluice Authors"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# Proto definitions
+sluice-proto = { path = "../sluice-proto" }
+
+# gRPC (client only, no server features)
+tonic = { version = "0.12", features = ["tls"] }
+
+# Async runtime (minimal features for client)
+tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread"] }
+tokio-stream = "0.1"
+futures = "0.3"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Tracing (optional for debug)
+tracing = "0.1"
+
+[lib]
+name = "sluice_client"
+path = "src/lib.rs"

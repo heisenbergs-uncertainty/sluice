@@ -1,0 +1,16 @@
+[package]
+name = "sluice-proto"
+version = "0.1.0"
+edition = "2021"
+description = "Protocol buffer definitions for Sluice message broker"
+authors = ["Sluice Authors"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# gRPC and protobuf
+tonic = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+
+[build-dependencies]
+tonic-build = "0.12"

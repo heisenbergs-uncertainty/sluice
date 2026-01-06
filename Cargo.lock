@@ -1484,6 +1484,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sluice-proto",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
@@ -1491,11 +1492,20 @@ dependencies = [
  "tokio-test",
  "tokio-util",
  "tonic",
- "tonic-build",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "sluice-proto"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]

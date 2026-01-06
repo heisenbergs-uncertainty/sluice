@@ -1,9 +1,6 @@
 //! Re-export of generated protobuf code.
 //!
-//! Generated from proto/sluice/v1/sluice.proto via build.rs
+//! This module re-exports the protocol buffer definitions from the sluice-proto crate.
 
-pub mod sluice {
-    pub mod v1 {
-        tonic::include_proto!("sluice.v1");
-    }
-}
+// Re-export everything from sluice-proto
+pub use sluice_proto::*;

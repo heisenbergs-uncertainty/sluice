@@ -12,6 +12,8 @@ pub enum Screen {
     Help,
     CreateTopic,
     MessageDetail,
+    Metrics,
+    ConsumerGroupInput,
 }
 
 /// Active field in publish screen.
@@ -20,6 +22,14 @@ pub enum PublishInputField {
     #[default]
     Topic,
     Payload,
+}
+
+/// Layout mode for the TUI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LayoutMode {
+    #[default]
+    SinglePane,  // Current behavior
+    ThreePane,   // Topics | Messages | Details
 }
 
 /// Connection status.
@@ -33,10 +43,11 @@ pub enum ConnStatus {
 }
 
 /// Application state (session-local, in-memory only).
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct AppState {
     pub screen: Screen,
     pub conn_status: ConnStatus,
+    pub layout_mode: LayoutMode,
 
     // Topic list
     pub topics: Vec<Topic>,
@@ -72,6 +83,22 @@ pub struct AppState {
     // Config from CLI (used in credit management - T020/T044)
     #[allow(dead_code)]
     pub credits_window: u32,
+
+    // Metrics tracking (Phase 4)
+    pub connection_start: Option<std::time::Instant>,
+    pub total_published: u64,
+    pub total_consumed: u64,
+    pub publish_timestamps: std::collections::VecDeque<std::time::Instant>,
+    pub consume_timestamps: std::collections::VecDeque<std::time::Instant>,
+
+    // Consumer group selection (Phase 4)
+    pub consumer_group: Option<String>,
+    pub consumer_group_input: String,
+
+    // Search/filter (Phase 4)
+    pub search_query: String,
+    pub search_active: bool,
+    pub filtered_messages: Vec<usize>,  // Indices into messages vec
 }
 
 impl AppState {
@@ -140,6 +167,140 @@ impl AppState {
     /// Check if topic creation is valid.
     pub fn can_create_topic(&self) -> bool {
         Self::is_valid_topic_name(&self.create_topic_name)
+    }
+
+    /// Toggle between single-pane and three-pane layout modes.
+    pub fn toggle_layout_mode(&mut self) {
+        self.layout_mode = match self.layout_mode {
+            LayoutMode::SinglePane => LayoutMode::ThreePane,
+            LayoutMode::ThreePane => LayoutMode::SinglePane,
+        };
+    }
+
+    /// Record a publish event for metrics tracking.
+    pub fn record_publish(&mut self) {
+        self.total_published += 1;
+        let now = std::time::Instant::now();
+        self.publish_timestamps.push_back(now);
+
+        // Keep only last 60 seconds
+        let cutoff = now - std::time::Duration::from_secs(60);
+        while self.publish_timestamps.front().is_some_and(|&t| t < cutoff) {
+            self.publish_timestamps.pop_front();
+        }
+    }
+
+    /// Record a consume event for metrics tracking.
+    pub fn record_consume(&mut self) {
+        self.total_consumed += 1;
+        let now = std::time::Instant::now();
+        self.consume_timestamps.push_back(now);
+
+        // Keep only last 60 seconds
+        let cutoff = now - std::time::Duration::from_secs(60);
+        while self.consume_timestamps.front().is_some_and(|&t| t < cutoff) {
+            self.consume_timestamps.pop_front();
+        }
+    }
+
+    /// Calculate publish rate (messages per second) over last 60s.
+    pub fn publish_rate(&self) -> f64 {
+        let count = self.publish_timestamps.len();
+        if count == 0 {
+            return 0.0;
+        }
+
+        let oldest = self.publish_timestamps.front().unwrap();
+        let newest = self.publish_timestamps.back().unwrap();
+        let duration = newest.duration_since(*oldest).as_secs_f64();
+
+        if duration > 0.0 {
+            count as f64 / duration
+        } else {
+            0.0
+        }
+    }
+
+    /// Calculate consume rate (messages per second) over last 60s.
+    pub fn consume_rate(&self) -> f64 {
+        let count = self.consume_timestamps.len();
+        if count == 0 {
+            return 0.0;
+        }
+
+        let oldest = self.consume_timestamps.front().unwrap();
+        let newest = self.consume_timestamps.back().unwrap();
+        let duration = newest.duration_since(*oldest).as_secs_f64();
+
+        if duration > 0.0 {
+            count as f64 / duration
+        } else {
+            0.0
+        }
+    }
+
+    /// Get connection uptime as a formatted string.
+    pub fn uptime_string(&self) -> String {
+        match self.connection_start {
+            Some(start) => {
+                let elapsed = start.elapsed();
+                let hours = elapsed.as_secs() / 3600;
+                let minutes = (elapsed.as_secs() % 3600) / 60;
+                let seconds = elapsed.as_secs() % 60;
+                format!("{}h {}m {}s", hours, minutes, seconds)
+            }
+            None => "N/A".to_string(),
+        }
+    }
+
+    /// Apply search filter to messages.
+    pub fn apply_search_filter(&mut self) {
+        self.filtered_messages.clear();
+
+        if self.search_query.trim().is_empty() {
+            // No filter - show all messages
+            return;
+        }
+
+        let query_lower = self.search_query.to_lowercase();
+
+        for (i, msg) in self.messages.iter().enumerate() {
+            // Search in message ID
+            if msg.message_id.to_lowercase().contains(&query_lower) {
+                self.filtered_messages.push(i);
+                continue;
+            }
+
+            // Search in payload (if UTF-8)
+            if let Ok(payload_str) = std::str::from_utf8(&msg.payload) {
+                if payload_str.to_lowercase().contains(&query_lower) {
+                    self.filtered_messages.push(i);
+                    continue;
+                }
+            }
+
+            // Search in attributes
+            for (key, value) in &msg.attributes {
+                if key.to_lowercase().contains(&query_lower)
+                    || value.to_lowercase().contains(&query_lower)
+                {
+                    self.filtered_messages.push(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Get visible messages (filtered or all).
+    pub fn visible_messages(&self) -> Vec<&MessageDelivery> {
+        if self.search_active && !self.search_query.trim().is_empty() {
+            self.filtered_messages
+                .iter()
+                .filter_map(|&i| self.messages.get(i))
+                .collect()
+        } else {
+            self.messages.iter().collect()
+        }
     }
 }
 
@@ -308,5 +469,209 @@ mod tests {
         // Invalid characters
         state.create_topic_name = "bad topic name".to_string();
         assert!(!state.can_create_topic());
+    }
+
+    #[test]
+    fn layout_mode_defaults_to_single_pane() {
+        let state = AppState::new(128);
+        assert_eq!(state.layout_mode, LayoutMode::SinglePane);
+    }
+
+    #[test]
+    fn can_toggle_layout_mode() {
+        let mut state = AppState::new(128);
+
+        // Start in single-pane
+        assert_eq!(state.layout_mode, LayoutMode::SinglePane);
+
+        // Toggle to three-pane
+        state.toggle_layout_mode();
+        assert_eq!(state.layout_mode, LayoutMode::ThreePane);
+
+        // Toggle back to single-pane
+        state.toggle_layout_mode();
+        assert_eq!(state.layout_mode, LayoutMode::SinglePane);
+    }
+
+    #[test]
+    fn metrics_tracking_publish_events() {
+        let mut state = AppState::new(128);
+
+        // Initially zero
+        assert_eq!(state.total_published, 0);
+        assert_eq!(state.publish_timestamps.len(), 0);
+
+        // Record publish event
+        state.record_publish();
+        assert_eq!(state.total_published, 1);
+        assert_eq!(state.publish_timestamps.len(), 1);
+
+        // Record multiple
+        state.record_publish();
+        state.record_publish();
+        assert_eq!(state.total_published, 3);
+        assert_eq!(state.publish_timestamps.len(), 3);
+    }
+
+    #[test]
+    fn metrics_tracking_consume_events() {
+        let mut state = AppState::new(128);
+
+        // Initially zero
+        assert_eq!(state.total_consumed, 0);
+        assert_eq!(state.consume_timestamps.len(), 0);
+
+        // Record consume event
+        state.record_consume();
+        assert_eq!(state.total_consumed, 1);
+        assert_eq!(state.consume_timestamps.len(), 1);
+
+        // Record multiple
+        state.record_consume();
+        state.record_consume();
+        assert_eq!(state.total_consumed, 3);
+        assert_eq!(state.consume_timestamps.len(), 3);
+    }
+
+    #[test]
+    fn uptime_string_when_not_connected() {
+        let state = AppState::new(128);
+        assert_eq!(state.uptime_string(), "N/A");
+    }
+
+    #[test]
+    fn uptime_string_when_connected() {
+        let mut state = AppState::new(128);
+        state.connection_start = Some(std::time::Instant::now());
+        let uptime = state.uptime_string();
+        // Should be formatted as "Xh Xm Xs"
+        assert!(uptime.contains('h'));
+        assert!(uptime.contains('m'));
+        assert!(uptime.contains('s'));
+    }
+
+    #[test]
+    fn search_filter_by_payload() {
+        let mut state = AppState::new(128);
+
+        // Add messages
+        let msg1 = MessageDelivery {
+            message_id: "msg-001".to_string(),
+            sequence: 1,
+            payload: b"hello world".to_vec(),
+            attributes: Default::default(),
+            timestamp: 12345,
+        };
+
+        let msg2 = MessageDelivery {
+            message_id: "msg-002".to_string(),
+            sequence: 2,
+            payload: b"goodbye moon".to_vec(),
+            attributes: Default::default(),
+            timestamp: 12346,
+        };
+
+        state.messages.push(msg1);
+        state.messages.push(msg2);
+
+        // Search for "hello"
+        state.search_query = "hello".to_string();
+        state.apply_search_filter();
+
+        assert_eq!(state.filtered_messages.len(), 1);
+        assert_eq!(state.filtered_messages[0], 0); // First message
+
+        // Search for "moon"
+        state.search_query = "moon".to_string();
+        state.apply_search_filter();
+
+        assert_eq!(state.filtered_messages.len(), 1);
+        assert_eq!(state.filtered_messages[0], 1); // Second message
+
+        // Search for something that doesn't exist
+        state.search_query = "xyz".to_string();
+        state.apply_search_filter();
+
+        assert_eq!(state.filtered_messages.len(), 0);
+    }
+
+    #[test]
+    fn search_filter_by_message_id() {
+        let mut state = AppState::new(128);
+
+        let msg = MessageDelivery {
+            message_id: "test-uuid-123".to_string(),
+            sequence: 1,
+            payload: b"payload".to_vec(),
+            attributes: Default::default(),
+            timestamp: 12345,
+        };
+
+        state.messages.push(msg);
+
+        // Search by ID
+        state.search_query = "uuid".to_string();
+        state.apply_search_filter();
+
+        assert_eq!(state.filtered_messages.len(), 1);
+        assert_eq!(state.filtered_messages[0], 0);
+    }
+
+    #[test]
+    fn search_filter_by_attributes() {
+        let mut state = AppState::new(128);
+
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("user_id".to_string(), "12345".to_string());
+        attrs.insert("trace_id".to_string(), "abc-def-ghi".to_string());
+
+        let msg = MessageDelivery {
+            message_id: "msg-001".to_string(),
+            sequence: 1,
+            payload: b"data".to_vec(),
+            attributes: attrs,
+            timestamp: 12345,
+        };
+
+        state.messages.push(msg);
+
+        // Search by attribute key
+        state.search_query = "user_id".to_string();
+        state.apply_search_filter();
+        assert_eq!(state.filtered_messages.len(), 1);
+
+        // Search by attribute value
+        state.search_query = "12345".to_string();
+        state.apply_search_filter();
+        assert_eq!(state.filtered_messages.len(), 1);
+
+        // Search by trace ID
+        state.search_query = "abc-def".to_string();
+        state.apply_search_filter();
+        assert_eq!(state.filtered_messages.len(), 1);
+    }
+
+    #[test]
+    fn search_is_case_insensitive() {
+        let mut state = AppState::new(128);
+
+        let msg = MessageDelivery {
+            message_id: "MSG-001".to_string(),
+            sequence: 1,
+            payload: b"Hello World".to_vec(),
+            attributes: Default::default(),
+            timestamp: 12345,
+        };
+
+        state.messages.push(msg);
+
+        // Lowercase search should find uppercase content
+        state.search_query = "msg".to_string();
+        state.apply_search_filter();
+        assert_eq!(state.filtered_messages.len(), 1);
+
+        state.search_query = "hello".to_string();
+        state.apply_search_filter();
+        assert_eq!(state.filtered_messages.len(), 1);
     }
 }

@@ -53,6 +53,10 @@ impl Controller {
                 tracing::info!("Connected successfully");
                 self.client = Some(c);
                 self.state.conn_status = ConnStatus::Connected;
+                // Initialize connection start time for metrics
+                if self.state.connection_start.is_none() {
+                    self.state.connection_start = Some(std::time::Instant::now());
+                }
                 self.reconnect_attempt = 0;
                 self.load_topics().await;
             }
@@ -90,7 +94,7 @@ impl Controller {
             match c
                 .subscribe(
                     &topic,
-                    None, // consumer_group: default
+                    self.state.consumer_group.as_deref(), // Use selected consumer group
                     None, // consumer_id
                     self.state.initial_position,
                     self.state.credits_window,
@@ -129,6 +133,8 @@ impl Controller {
                     // Only add if not a duplicate (prevents double-display on reconnect)
                     let is_new = self.state.add_message_if_new(msg);
                     if is_new {
+                        // Track metrics
+                        self.state.record_consume();
                         // Auto-scroll to latest if cursor is at end
                         if self.state.message_cursor + 1 >= self.state.messages.len().saturating_sub(1)
                         {
@@ -216,6 +222,21 @@ impl Controller {
             return self.handle_message_detail_key(code);
         }
 
+        // Handle consumer group input screen
+        if self.state.screen == Screen::ConsumerGroupInput {
+            return self.handle_consumer_group_key(code).await;
+        }
+
+        // Handle metrics screen
+        if self.state.screen == Screen::Metrics {
+            return self.handle_metrics_key(code);
+        }
+
+        // Handle search mode in Tail screen
+        if self.state.screen == Screen::Tail && self.state.search_active {
+            return self.handle_search_key(code);
+        }
+
         match code {
             KeyCode::Char('q') => return false,
             KeyCode::Char('?') => {
@@ -229,6 +250,8 @@ impl Controller {
                     Screen::Help => Screen::TopicList,
                     Screen::CreateTopic => Screen::TopicList,
                     Screen::MessageDetail => Screen::Tail,
+                    Screen::Metrics => Screen::TopicList,
+                    Screen::ConsumerGroupInput => Screen::TopicList,
                 };
             }
             KeyCode::Char('p') => {
@@ -249,11 +272,47 @@ impl Controller {
                     }
                 }
             }
+            KeyCode::Char('t') => {
+                // Toggle layout mode
+                self.state.toggle_layout_mode();
+            }
+            KeyCode::Char('m') => {
+                // Open metrics dashboard
+                if matches!(self.state.screen, Screen::TopicList | Screen::Tail) {
+                    self.state.screen = Screen::Metrics;
+                }
+            }
+            KeyCode::Char('g') => {
+                // Open consumer group selection
+                if self.state.screen == Screen::TopicList {
+                    self.state.screen = Screen::ConsumerGroupInput;
+                    self.state.consumer_group_input.clear();
+                }
+            }
+            KeyCode::Char('/') => {
+                // Activate search mode
+                if self.state.screen == Screen::Tail {
+                    self.state.search_active = true;
+                    self.state.search_query.clear();
+                }
+            }
             KeyCode::Char('j') | KeyCode::Down => {
                 self.move_cursor_down();
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.move_cursor_up();
+            }
+            KeyCode::PageDown => {
+                self.page_down();
+            }
+            KeyCode::PageUp => {
+                self.page_up();
+            }
+            KeyCode::Home => {
+                self.jump_to_top();
+            }
+            KeyCode::End => {
+                self.jump_to_bottom();
             }
             KeyCode::Enter => {
                 if self.state.screen == Screen::TopicList {
@@ -364,6 +423,8 @@ impl Controller {
                         resp.message_id, resp.sequence
                     ));
                     self.state.publish_payload.clear();
+                    // Track metrics
+                    self.state.record_publish();
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "Publish failed");
@@ -438,6 +499,74 @@ impl Controller {
         true
     }
 
+    async fn handle_consumer_group_key(&mut self, code: KeyCode) -> bool {
+        match code {
+            KeyCode::Char('q') => return false,
+            KeyCode::Esc => {
+                self.state.screen = Screen::TopicList;
+                self.state.consumer_group_input.clear();
+            }
+            KeyCode::Enter => {
+                // Set consumer group (empty = None = default)
+                if self.state.consumer_group_input.trim().is_empty() {
+                    self.state.consumer_group = None;
+                } else {
+                    self.state.consumer_group = Some(self.state.consumer_group_input.clone());
+                }
+                self.state.screen = Screen::TopicList;
+            }
+            KeyCode::Char(c) => {
+                self.state.consumer_group_input.push(c);
+            }
+            KeyCode::Backspace => {
+                self.state.consumer_group_input.pop();
+            }
+            _ => {}
+        }
+        true
+    }
+
+    fn handle_metrics_key(&mut self, code: KeyCode) -> bool {
+        match code {
+            KeyCode::Char('q') => return false,
+            KeyCode::Esc => {
+                self.state.screen = Screen::TopicList;
+            }
+            _ => {}
+        }
+        true
+    }
+
+    fn handle_search_key(&mut self, code: KeyCode) -> bool {
+        match code {
+            KeyCode::Char('q') => return false,
+            KeyCode::Esc => {
+                // Exit search mode
+                self.state.search_active = false;
+                self.state.search_query.clear();
+                self.state.filtered_messages.clear();
+            }
+            KeyCode::Enter => {
+                // Apply filter
+                self.state.apply_search_filter();
+                // Exit search input mode but keep filter active
+                self.state.search_active = false;
+            }
+            KeyCode::Char(c) => {
+                self.state.search_query.push(c);
+                // Live filter as user types
+                self.state.apply_search_filter();
+            }
+            KeyCode::Backspace => {
+                self.state.search_query.pop();
+                // Update filter
+                self.state.apply_search_filter();
+            }
+            _ => {}
+        }
+        true
+    }
+
     /// Send an Ack for a message ID via the subscription.
     #[tracing::instrument(skip(self), fields(%message_id))]
     async fn send_ack(&mut self, message_id: String) {
@@ -473,6 +602,58 @@ impl Controller {
             }
             Screen::Tail => {
                 self.state.message_cursor = self.state.message_cursor.saturating_sub(1);
+            }
+            _ => {}
+        }
+    }
+
+    fn page_down(&mut self) {
+        const PAGE_SIZE: usize = 10;
+        match self.state.screen {
+            Screen::TopicList => {
+                let max = self.state.topics.len().saturating_sub(1);
+                self.state.topic_cursor = (self.state.topic_cursor + PAGE_SIZE).min(max);
+            }
+            Screen::Tail => {
+                let max = self.state.messages.len().saturating_sub(1);
+                self.state.message_cursor = (self.state.message_cursor + PAGE_SIZE).min(max);
+            }
+            _ => {}
+        }
+    }
+
+    fn page_up(&mut self) {
+        const PAGE_SIZE: usize = 10;
+        match self.state.screen {
+            Screen::TopicList => {
+                self.state.topic_cursor = self.state.topic_cursor.saturating_sub(PAGE_SIZE);
+            }
+            Screen::Tail => {
+                self.state.message_cursor = self.state.message_cursor.saturating_sub(PAGE_SIZE);
+            }
+            _ => {}
+        }
+    }
+
+    fn jump_to_top(&mut self) {
+        match self.state.screen {
+            Screen::TopicList => {
+                self.state.topic_cursor = 0;
+            }
+            Screen::Tail => {
+                self.state.message_cursor = 0;
+            }
+            _ => {}
+        }
+    }
+
+    fn jump_to_bottom(&mut self) {
+        match self.state.screen {
+            Screen::TopicList => {
+                self.state.topic_cursor = self.state.topics.len().saturating_sub(1);
+            }
+            Screen::Tail => {
+                self.state.message_cursor = self.state.messages.len().saturating_sub(1);
             }
             _ => {}
         }

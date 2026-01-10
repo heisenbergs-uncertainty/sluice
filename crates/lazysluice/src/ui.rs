@@ -8,9 +8,11 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{AppState, ConnStatus, Screen};
+use crate::app::{AppState, Screen};
 
 pub fn draw(frame: &mut Frame, state: &AppState) {
+    use crate::app::LayoutMode;
+
     let size = frame.size();
 
     // Status bar at bottom (1 line)
@@ -22,7 +24,35 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
     let main_area = chunks[0];
     let status_area = chunks[1];
 
-    // Render status bar
+    // Render enhanced status bar
+    draw_status_bar(frame, status_area, state);
+
+    // Main content - check layout mode
+    if state.show_help || state.screen == Screen::Help {
+        draw_help(frame, main_area);
+    } else if state.layout_mode == LayoutMode::ThreePane
+        && matches!(state.screen, Screen::TopicList | Screen::Tail)
+    {
+        // Three-pane layout for topic list and tail views
+        draw_three_pane_layout(frame, main_area, state);
+    } else {
+        // Single-pane layout (default)
+        match state.screen {
+            Screen::TopicList => draw_topic_list(frame, main_area, state),
+            Screen::Tail => draw_tail(frame, main_area, state),
+            Screen::Publish => draw_publish(frame, main_area, state),
+            Screen::Help => draw_help(frame, main_area),
+            Screen::CreateTopic => draw_create_topic(frame, main_area, state),
+            Screen::MessageDetail => draw_message_detail(frame, main_area, state),
+            Screen::Metrics => draw_metrics(frame, main_area, state),
+            Screen::ConsumerGroupInput => draw_consumer_group_input(frame, main_area, state),
+        }
+    }
+}
+
+fn draw_status_bar(frame: &mut Frame, area: Rect, state: &AppState) {
+    use crate::app::{ConnStatus, LayoutMode};
+
     let status_text = match &state.conn_status {
         ConnStatus::Disconnected => Span::styled("Disconnected", Style::default().fg(Color::Red)),
         ConnStatus::Connecting => Span::styled("Connecting...", Style::default().fg(Color::Yellow)),
@@ -31,29 +61,79 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
             Span::styled(format!("Error: {e}"), Style::default().fg(Color::Red))
         }
     };
+
+    // Add layout mode indicator
+    let layout_indicator = match state.layout_mode {
+        LayoutMode::SinglePane => "",
+        LayoutMode::ThreePane => " [3-PANE]",
+    };
+
+    // Add subscription info if available
+    let subscription_info = if let Some(ref topic) = state.current_topic {
+        format!(" Sub: {}", topic)
+    } else {
+        String::new()
+    };
+
     let status_bar = Paragraph::new(Line::from(vec![
         Span::raw(" ["),
         status_text,
-        Span::raw("] "),
+        Span::raw("]"),
+        Span::styled(subscription_info, Style::default().fg(Color::Cyan)),
+        Span::styled(layout_indicator, Style::default().fg(Color::Magenta)),
+        Span::raw(" "),
         Span::styled(
-            "q:quit ?:help Tab:switch",
+            "q:quit ?:help t:layout Tab:switch",
             Style::default().fg(Color::DarkGray),
         ),
     ]));
-    frame.render_widget(status_bar, status_area);
+    frame.render_widget(status_bar, area);
+}
 
-    // Main content
-    if state.show_help || state.screen == Screen::Help {
-        draw_help(frame, main_area);
+fn draw_three_pane_layout(frame: &mut Frame, area: Rect, state: &AppState) {
+    // Split into three columns: Topics (25%) | Messages (50%) | Details (25%)
+    let panes = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(25),
+            Constraint::Percentage(50),
+            Constraint::Percentage(25),
+        ])
+        .split(area);
+
+    // Left pane: Topics
+    draw_topic_list(frame, panes[0], state);
+
+    // Middle pane: Messages
+    draw_tail(frame, panes[1], state);
+
+    // Right pane: Message detail or info
+    if let Some(msg) = state.selected_message() {
+        let mut detail_state = state.clone();
+        detail_state.detail_message = Some(msg.clone());
+        draw_message_detail(frame, panes[2], &detail_state);
     } else {
-        match state.screen {
-            Screen::TopicList => draw_topic_list(frame, main_area, state),
-            Screen::Tail => draw_tail(frame, main_area, state),
-            Screen::Publish => draw_publish(frame, main_area, state),
-            Screen::Help => draw_help(frame, main_area),
-            Screen::CreateTopic => draw_create_topic(frame, main_area, state),
-            Screen::MessageDetail => draw_message_detail(frame, main_area, state),
-        }
+        // Show placeholder
+        let text = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "No message selected",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Use j/k or arrows",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(Span::styled(
+                "to select a message",
+                Style::default().fg(Color::DarkGray),
+            )),
+        ];
+        let para = Paragraph::new(text)
+            .block(Block::default().borders(Borders::ALL).title("Detail"))
+            .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(para, panes[2]);
     }
 }
 
@@ -101,7 +181,16 @@ fn draw_tail(frame: &mut Frame, area: Rect, state: &AppState) {
         InitialPosition::Latest => "LATEST",
     };
 
-    let title = if state.paused {
+    let title = if state.search_active {
+        format!("Tail [SEARCH: {}]", state.search_query)
+    } else if !state.search_query.is_empty() && !state.filtered_messages.is_empty() {
+        format!(
+            "Tail [{}] [FILTERED: {} of {}]",
+            position_indicator,
+            state.filtered_messages.len(),
+            state.messages.len()
+        )
+    } else if state.paused {
         format!("Tail [PAUSED | {}]", position_indicator)
     } else {
         format!("Tail [{}]", position_indicator)
@@ -222,30 +311,39 @@ fn draw_publish(frame: &mut Frame, area: Rect, state: &AppState) {
 fn draw_help(frame: &mut Frame, area: Rect) {
     let text = r#"
   GLOBAL
-  q        Quit
-  ?        Toggle help
-  Tab      Cycle views / Switch fields in publish
+  q          Quit
+  ?          Toggle help
+  t          Toggle layout mode (single/three-pane)
+  Tab        Cycle views / Switch fields in publish
 
   NAVIGATION
-  j / ↓    Move selection down
-  k / ↑    Move selection up
+  j / ↓      Move selection down
+  k / ↑      Move selection up
+  PgDn       Page down (10 items)
+  PgUp       Page up (10 items)
+  Home       Jump to top
+  End        Jump to bottom
 
   TOPIC LIST
-  Enter    Select topic / start tail
-  p        Jump to Publish view
-  c        Create new topic
+  Enter      Select topic / start tail
+  p          Jump to Publish view
+  c          Create new topic
+  g          Set consumer group
+  m          View metrics dashboard
 
   TAIL VIEW
-  Space    Pause/resume tail
-  a        Ack selected message
-  e        Subscribe from Earliest (history)
-  l        Subscribe from Latest (new only)
-  i        Inspect message details
+  Space      Pause/resume tail
+  a          Ack selected message
+  e          Subscribe from Earliest (history)
+  l          Subscribe from Latest (new only)
+  i          Inspect message details
+  /          Search/filter messages
+  m          View metrics dashboard
 
   PUBLISH VIEW
-  Tab      Switch between Topic/Payload fields
-  Enter    Send message
-  Esc      Return to topic list
+  Tab        Switch between Topic/Payload fields
+  Enter      Send message
+  Esc        Return to topic list
 "#;
     let para = Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Help"));
     frame.render_widget(para, area);
@@ -376,6 +474,127 @@ fn draw_message_detail(frame: &mut Frame, area: Rect, state: &AppState) {
     let para = Paragraph::new(lines)
         .block(Block::default().borders(Borders::ALL).title("Message Detail"))
         .wrap(ratatui::widgets::Wrap { trim: false });
+    frame.render_widget(para, area);
+}
+
+fn draw_metrics(frame: &mut Frame, area: Rect, state: &AppState) {
+    let uptime = state.uptime_string();
+    let pub_rate = state.publish_rate();
+    let con_rate = state.consume_rate();
+
+    let text = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "Metrics Dashboard",
+            Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Connection Uptime: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(uptime),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "── Publish Stats ──",
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(vec![
+            Span::styled("  Total Published: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(format!("{}", state.total_published)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Last Minute: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(format!("{}", state.publish_timestamps.len())),
+        ]),
+        Line::from(vec![
+            Span::styled("  Rate: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(format!("{:.2} msgs/sec", pub_rate)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "── Subscribe Stats ──",
+            Style::default().fg(Color::Green),
+        )),
+        Line::from(vec![
+            Span::styled("  Total Consumed: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(format!("{}", state.total_consumed)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Last Minute: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(format!("{}", state.consume_timestamps.len())),
+        ]),
+        Line::from(vec![
+            Span::styled("  Rate: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(format!("{:.2} msgs/sec", con_rate)),
+        ]),
+        Line::from(""),
+    ];
+
+    // Add subscription info if active
+    let mut lines = text;
+    if let Some(ref topic) = state.current_topic {
+        lines.push(Line::from(Span::styled(
+            "── Active Subscription ──",
+            Style::default().fg(Color::Magenta),
+        )));
+        lines.push(Line::from(vec![
+            Span::styled("  Topic: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(topic, Style::default().fg(Color::Cyan)),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("  Consumer Group: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(
+                state
+                    .consumer_group
+                    .as_deref()
+                    .unwrap_or("default"),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("  Messages Buffered: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(format!("{}", state.messages.len())),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("  Acked: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(format!("{}", state.acked_ids.len())),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    lines.push(Line::from(Span::styled(
+        "Press Esc to return",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let para = Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title("Metrics"));
+    frame.render_widget(para, area);
+}
+
+fn draw_consumer_group_input(frame: &mut Frame, area: Rect, state: &AppState) {
+    let text = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("Consumer Group: "),
+            Span::styled(
+                &state.consumer_group_input,
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" ◄", Style::default().fg(Color::Green)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Leave empty for \"default\" group",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Enter to confirm, Esc to cancel",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    let para = Paragraph::new(text)
+        .block(Block::default().borders(Borders::ALL).title("Consumer Group"));
     frame.render_widget(para, area);
 }
 

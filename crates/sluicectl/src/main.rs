@@ -119,6 +119,7 @@ async fn main() -> Result<()> {
         endpoint: cli.endpoint,
         tls_ca: cli.tls_ca,
         tls_domain: cli.tls_domain,
+        retry: sluice_client::RetryConfig::default(),
     };
 
     match cli.command {

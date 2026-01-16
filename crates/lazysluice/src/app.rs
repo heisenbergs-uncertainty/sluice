@@ -128,6 +128,7 @@ impl AppState {
         self.initial_position = match self.initial_position {
             InitialPosition::Earliest => InitialPosition::Latest,
             InitialPosition::Latest => InitialPosition::Earliest,
+            InitialPosition::Offset => InitialPosition::Earliest,
         };
     }
 

@@ -179,6 +179,7 @@ fn draw_tail(frame: &mut Frame, area: Rect, state: &AppState) {
     let position_indicator = match state.initial_position {
         InitialPosition::Earliest => "EARLIEST",
         InitialPosition::Latest => "LATEST",
+        InitialPosition::Offset => "OFFSET",
     };
 
     let title = if state.search_active {

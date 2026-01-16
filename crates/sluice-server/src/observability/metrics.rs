@@ -5,14 +5,23 @@
 //! - sluice_publish_latency_seconds: Histogram for publish latency
 //! - sluice_backpressure_active: Gauge for backpressure state
 //! - sluice_subscription_lag: Gauge for consumer lag
+//! - sluice_batch_publish_total: Counter for batch publish operations
+//! - sluice_batch_publish_size: Histogram for batch sizes
+//! - sluice_active_subscriptions: Gauge for active subscription count
+//! - sluice_messages_delivered: Counter for messages delivered
+//! - sluice_messages_acked: Counter for messages acknowledged
 
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 use opentelemetry::{global, KeyValue};
 use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
+use prometheus::Registry;
 use std::sync::OnceLock;
 
 /// Global metrics instance.
 static METRICS: OnceLock<Metrics> = OnceLock::new();
+
+/// Global Prometheus registry.
+static PROMETHEUS_REGISTRY: OnceLock<Registry> = OnceLock::new();
 
 /// Sluice metrics registry.
 #[derive(Debug)]
@@ -25,6 +34,18 @@ pub struct Metrics {
     pub backpressure_active: Gauge<i64>,
     /// Gauge indicating subscription lag (messages behind latest).
     pub subscription_lag: Gauge<i64>,
+    /// Total number of batch publish operations.
+    pub batch_publish_total: Counter<u64>,
+    /// Histogram of batch publish sizes.
+    pub batch_publish_size: Histogram<f64>,
+    /// Number of active subscriptions.
+    pub active_subscriptions: Gauge<i64>,
+    /// Total messages delivered to consumers.
+    pub messages_delivered: Counter<u64>,
+    /// Total messages acknowledged by consumers.
+    pub messages_acked: Counter<u64>,
+    /// Credits granted to consumers.
+    pub credits_granted: Counter<u64>,
 }
 
 impl Metrics {
@@ -51,6 +72,36 @@ impl Metrics {
                 .with_description("Consumer lag (max_seq - cursor)")
                 .with_unit("1")
                 .init(),
+            batch_publish_total: meter
+                .u64_counter("sluice_batch_publish_total")
+                .with_description("Total number of batch publish operations")
+                .with_unit("1")
+                .init(),
+            batch_publish_size: meter
+                .f64_histogram("sluice_batch_publish_size")
+                .with_description("Number of messages in batch publish operations")
+                .with_unit("1")
+                .init(),
+            active_subscriptions: meter
+                .i64_gauge("sluice_active_subscriptions")
+                .with_description("Number of active subscriptions")
+                .with_unit("1")
+                .init(),
+            messages_delivered: meter
+                .u64_counter("sluice_messages_delivered")
+                .with_description("Total messages delivered to consumers")
+                .with_unit("1")
+                .init(),
+            messages_acked: meter
+                .u64_counter("sluice_messages_acked")
+                .with_description("Total messages acknowledged by consumers")
+                .with_unit("1")
+                .init(),
+            credits_granted: meter
+                .u64_counter("sluice_credits_granted")
+                .with_description("Total credits granted to consumers")
+                .with_unit("1")
+                .init(),
         }
     }
 }
@@ -63,6 +114,9 @@ impl Metrics {
 ///
 /// * `otel_endpoint` - Optional OTLP endpoint for metrics export
 pub fn init_metrics_with_endpoint(otel_endpoint: Option<&str>) {
+    // Initialize Prometheus registry
+    PROMETHEUS_REGISTRY.get_or_init(Registry::new);
+
     METRICS.get_or_init(|| {
         if let Some(endpoint) = otel_endpoint {
             // Use OTLP exporter when endpoint is configured
@@ -109,6 +163,16 @@ pub fn init_metrics() {
     init_metrics_with_endpoint(None);
 }
 
+/// Get the Prometheus registry for HTTP endpoint.
+///
+/// Returns a clone of the registry. Panics if metrics have not been initialized.
+pub fn prometheus_registry() -> Registry {
+    PROMETHEUS_REGISTRY
+        .get()
+        .cloned()
+        .unwrap_or_else(Registry::new)
+}
+
 /// Get the global metrics instance.
 ///
 /// Panics if metrics have not been initialized.
@@ -123,6 +187,16 @@ pub fn record_publish(topic: &str, latency_seconds: f64) {
     if let Some(m) = METRICS.get() {
         let attrs = [KeyValue::new("topic", topic.to_string())];
         m.publish_total.add(1, &attrs);
+        m.publish_latency.record(latency_seconds, &attrs);
+    }
+}
+
+/// Record a successful batch publish operation.
+pub fn record_batch_publish(topic: &str, batch_size: usize, latency_seconds: f64) {
+    if let Some(m) = METRICS.get() {
+        let attrs = [KeyValue::new("topic", topic.to_string())];
+        m.batch_publish_total.add(1, &attrs);
+        m.batch_publish_size.record(batch_size as f64, &attrs);
         m.publish_latency.record(latency_seconds, &attrs);
     }
 }
@@ -147,6 +221,50 @@ pub fn record_subscription_lag(topic: &str, consumer_group: &str, lag: i64) {
             KeyValue::new("consumer_group", consumer_group.to_string()),
         ];
         m.subscription_lag.record(lag, &attrs);
+    }
+}
+
+/// Record active subscriptions count.
+pub fn record_subscription_active(topic: &str, consumer_group: &str, delta: i64) {
+    if let Some(m) = METRICS.get() {
+        let attrs = [
+            KeyValue::new("topic", topic.to_string()),
+            KeyValue::new("consumer_group", consumer_group.to_string()),
+        ];
+        m.active_subscriptions.record(delta, &attrs);
+    }
+}
+
+/// Record a message delivery.
+pub fn record_message_delivered(topic: &str, consumer_group: &str) {
+    if let Some(m) = METRICS.get() {
+        let attrs = [
+            KeyValue::new("topic", topic.to_string()),
+            KeyValue::new("consumer_group", consumer_group.to_string()),
+        ];
+        m.messages_delivered.add(1, &attrs);
+    }
+}
+
+/// Record a message acknowledgment.
+pub fn record_ack(topic: &str, consumer_group: &str) {
+    if let Some(m) = METRICS.get() {
+        let attrs = [
+            KeyValue::new("topic", topic.to_string()),
+            KeyValue::new("consumer_group", consumer_group.to_string()),
+        ];
+        m.messages_acked.add(1, &attrs);
+    }
+}
+
+/// Record credits granted.
+pub fn record_credits_granted(topic: &str, consumer_group: &str, credits: u32) {
+    if let Some(m) = METRICS.get() {
+        let attrs = [
+            KeyValue::new("topic", topic.to_string()),
+            KeyValue::new("consumer_group", consumer_group.to_string()),
+        ];
+        m.credits_granted.add(credits as u64, &attrs);
     }
 }
 

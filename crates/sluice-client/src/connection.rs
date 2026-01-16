@@ -13,6 +13,55 @@ use sluice_proto::sluice::v1::{
 
 use super::subscription::Subscription;
 
+/// Configuration for retry logic with exponential backoff.
+#[derive(Debug, Clone)]
+pub struct RetryConfig {
+    /// Maximum number of retry attempts (0 means no retries).
+    pub max_retries: u32,
+    /// Initial backoff duration.
+    pub initial_backoff: Duration,
+    /// Maximum backoff duration.
+    pub max_backoff: Duration,
+    /// Backoff multiplier (exponential factor).
+    pub multiplier: f64,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: 3,
+            initial_backoff: Duration::from_millis(100),
+            max_backoff: Duration::from_secs(10),
+            multiplier: 2.0,
+        }
+    }
+}
+
+impl RetryConfig {
+    /// Create a retry config with no retries.
+    pub fn no_retry() -> Self {
+        Self {
+            max_retries: 0,
+            ..Default::default()
+        }
+    }
+
+    /// Create a retry config with custom max retries.
+    pub fn with_max_retries(max_retries: u32) -> Self {
+        Self {
+            max_retries,
+            ..Default::default()
+        }
+    }
+
+    /// Calculate the backoff duration for a given attempt.
+    pub fn backoff_for_attempt(&self, attempt: u32) -> Duration {
+        let backoff = self.initial_backoff.as_secs_f64() * self.multiplier.powi(attempt as i32);
+        let backoff_secs = backoff.min(self.max_backoff.as_secs_f64());
+        Duration::from_secs_f64(backoff_secs)
+    }
+}
+
 /// Configuration for connecting to a Sluice server.
 #[derive(Debug, Clone)]
 pub struct ConnectConfig {
@@ -22,6 +71,8 @@ pub struct ConnectConfig {
     pub tls_ca: Option<String>,
     /// Optional TLS domain name override
     pub tls_domain: Option<String>,
+    /// Retry configuration for connection attempts.
+    pub retry: RetryConfig,
 }
 
 impl ConnectConfig {
@@ -31,6 +82,7 @@ impl ConnectConfig {
             endpoint: endpoint.into(),
             tls_ca: None,
             tls_domain: None,
+            retry: RetryConfig::default(),
         }
     }
 
@@ -40,12 +92,25 @@ impl ConnectConfig {
             endpoint: endpoint.into(),
             tls_ca: Some(ca_path.into()),
             tls_domain: None,
+            retry: RetryConfig::default(),
         }
     }
 
     /// Set the TLS domain name override.
     pub fn with_domain(mut self, domain: impl Into<String>) -> Self {
         self.tls_domain = Some(domain.into());
+        self
+    }
+
+    /// Set the retry configuration.
+    pub fn with_retry(mut self, retry: RetryConfig) -> Self {
+        self.retry = retry;
+        self
+    }
+
+    /// Disable retries.
+    pub fn without_retry(mut self) -> Self {
+        self.retry = RetryConfig::no_retry();
         self
     }
 }
@@ -57,7 +122,42 @@ pub struct SluiceClient {
 
 impl SluiceClient {
     /// Connect to a Sluice server using the provided configuration.
+    ///
+    /// Uses exponential backoff retry logic based on the retry configuration.
     pub async fn connect(config: ConnectConfig) -> Result<Self> {
+        let retry_config = config.retry.clone();
+        let mut last_error: Option<anyhow::Error> = None;
+
+        for attempt in 0..=retry_config.max_retries {
+            if attempt > 0 {
+                let backoff = retry_config.backoff_for_attempt(attempt - 1);
+                tracing::debug!(
+                    attempt,
+                    backoff_ms = backoff.as_millis(),
+                    "Retrying connection"
+                );
+                tokio::time::sleep(backoff).await;
+            }
+
+            match Self::try_connect(&config).await {
+                Ok(client) => return Ok(client),
+                Err(e) => {
+                    tracing::warn!(
+                        attempt,
+                        max_retries = retry_config.max_retries,
+                        error = %e,
+                        "Connection attempt failed"
+                    );
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| anyhow!("connection failed")))
+    }
+
+    /// Try to connect once without retry.
+    async fn try_connect(config: &ConnectConfig) -> Result<Self> {
         let endpoint = &config.endpoint;
         let is_https = endpoint.starts_with("https://");
         let is_http = endpoint.starts_with("http://");
@@ -119,6 +219,7 @@ impl SluiceClient {
             endpoint: endpoint.to_string(),
             tls_ca: tls_ca.map(|p| p.to_string_lossy().to_string()),
             tls_domain: tls_domain.map(String::from),
+            retry: RetryConfig::default(),
         };
         Self::connect(config).await
     }

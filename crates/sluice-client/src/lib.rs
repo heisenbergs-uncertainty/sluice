@@ -36,8 +36,8 @@
 mod connection;
 mod subscription;
 
-pub use connection::{ConnectConfig, SluiceClient};
-pub use subscription::Subscription;
+pub use connection::{ConnectConfig, RetryConfig, SluiceClient};
+pub use subscription::{AutoRefillSubscription, CreditConfig, RefillAmount, Subscription};
 
 // Re-export proto types that clients commonly use
 pub use sluice_proto::{InitialPosition, MessageDelivery, PublishResponse, Topic};

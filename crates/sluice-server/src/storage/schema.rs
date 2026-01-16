@@ -46,6 +46,10 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     updated_at INTEGER,
     UNIQUE(topic_id, consumer_group)
 );
+
+-- Index for subscription lookups by topic and consumer group
+CREATE INDEX IF NOT EXISTS idx_subscriptions_topic_group
+ON subscriptions(topic_id, consumer_group);
 "#;
 
 /// Apply SQLite pragmas for optimal performance and durability.

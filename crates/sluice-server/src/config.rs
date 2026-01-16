@@ -44,6 +44,26 @@ pub struct Config {
     /// OpenTelemetry collector endpoint for metrics export (optional)
     #[arg(long, env = "OTEL_EXPORTER_OTLP_ENDPOINT")]
     pub otel_endpoint: Option<String>,
+
+    /// Maximum number of messages per batch commit
+    #[arg(long, env = "SLUICE_BATCH_SIZE", default_value_t = 100)]
+    pub batch_size: usize,
+
+    /// Maximum delay (ms) before flushing a partial batch
+    #[arg(long, env = "SLUICE_BATCH_DELAY_MS", default_value_t = 5)]
+    pub batch_delay_ms: u64,
+
+    /// WAL checkpoint threshold in pages (default 1000 = ~4MB)
+    #[arg(long, env = "SLUICE_WAL_CHECKPOINT_PAGES", default_value_t = 1000)]
+    pub wal_checkpoint_pages: i32,
+
+    /// Enable Prometheus metrics endpoint
+    #[arg(long, env = "SLUICE_METRICS_ENABLED", default_value_t = true)]
+    pub metrics_enabled: bool,
+
+    /// Port for Prometheus metrics HTTP server
+    #[arg(long, env = "SLUICE_METRICS_PORT", default_value_t = 9090)]
+    pub metrics_port: u16,
 }
 
 impl Config {
@@ -64,6 +84,11 @@ impl Config {
             reader_pool_size: 5,
             notify_channel_size: 256,
             otel_endpoint: None,
+            batch_size: 10,
+            batch_delay_ms: 1,
+            wal_checkpoint_pages: 100,
+            metrics_enabled: false,
+            metrics_port: 0,
         }
     }
 }
@@ -79,6 +104,11 @@ impl Default for Config {
             reader_pool_size: 10,
             notify_channel_size: 1024,
             otel_endpoint: None,
+            batch_size: 100,
+            batch_delay_ms: 5,
+            wal_checkpoint_pages: 1000,
+            metrics_enabled: true,
+            metrics_port: 9090,
         }
     }
 }

@@ -1,5 +1,6 @@
 //! gRPC service handlers for Sluice.
 
+pub mod batch_publish;
 pub mod publish;
 pub mod registry;
 pub mod subscribe;
@@ -14,8 +15,8 @@ use tonic::{Request, Response, Status, Streaming};
 
 use crate::proto::sluice::v1::sluice_server::Sluice;
 use crate::proto::sluice::v1::{
-    ListTopicsRequest, ListTopicsResponse, PublishRequest, PublishResponse, SubscribeDownstream,
-    SubscribeUpstream,
+    BatchPublishRequest, BatchPublishResponse, ListTopicsRequest, ListTopicsResponse,
+    PublishRequest, PublishResponse, SubscribeDownstream, SubscribeUpstream,
 };
 use crate::server::ServerState;
 
@@ -41,6 +42,13 @@ impl Sluice for SluiceService {
         request: Request<PublishRequest>,
     ) -> Result<Response<PublishResponse>, Status> {
         publish::handle_publish(&self.state, request).await
+    }
+
+    async fn batch_publish(
+        &self,
+        request: Request<BatchPublishRequest>,
+    ) -> Result<Response<BatchPublishResponse>, Status> {
+        batch_publish::handle_batch_publish(&self.state, request).await
     }
 
     type SubscribeStream = SubscribeStream;

@@ -65,6 +65,27 @@ pub struct CursorUpdateCommand {
     pub reply: oneshot::Sender<Result<(), WriterError>>,
 }
 
+/// A single message in a batch publish.
+pub struct BatchMessageInput {
+    pub message_id: String,
+    pub payload: Option<Vec<u8>>,
+    pub attributes: Option<String>,
+}
+
+/// Result of a single message in a batch publish.
+#[derive(Debug, Clone)]
+pub struct BatchPublishResultItem {
+    pub message_id: String,
+    pub sequence: i64,
+}
+
+/// Command to batch publish multiple messages atomically.
+pub struct BatchPublishCommand {
+    pub topic: String,
+    pub messages: Vec<BatchMessageInput>,
+    pub reply: oneshot::Sender<Result<(Vec<BatchPublishResultItem>, i64), WriterError>>,
+}
+
 /// Handle to the writer thread.
 ///
 /// Provides async interface to submit write operations.
@@ -75,6 +96,7 @@ pub struct WriterHandle {
 
 enum WriterMessage {
     Publish(PublishCommand),
+    BatchPublish(BatchPublishCommand),
     GetOrCreateSubscription(SubscriptionCommand),
     UpdateCursor(CursorUpdateCommand),
     Shutdown,
@@ -153,6 +175,31 @@ impl WriterHandle {
         reply_rx.await.map_err(|_| WriterError::ChannelClosed)?
     }
 
+    /// Submit a batch publish command and wait for the result.
+    ///
+    /// Returns a tuple of (results, timestamp) where results contains
+    /// message_id and sequence for each message in order.
+    pub async fn batch_publish(
+        &self,
+        topic: String,
+        messages: Vec<BatchMessageInput>,
+    ) -> Result<(Vec<BatchPublishResultItem>, i64), WriterError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+
+        let cmd = BatchPublishCommand {
+            topic,
+            messages,
+            reply: reply_tx,
+        };
+
+        self.sender
+            .send(WriterMessage::BatchPublish(cmd))
+            .await
+            .map_err(|_| WriterError::ChannelClosed)?;
+
+        reply_rx.await.map_err(|_| WriterError::ChannelClosed)?
+    }
+
     /// Request graceful shutdown of the writer thread.
     pub async fn shutdown(&self) -> Result<(), WriterError> {
         self.sender
@@ -176,10 +223,14 @@ impl Writer {
     /// * `db_path` - Path to the SQLite database
     /// * `notify_bus` - Notification bus for waking subscriptions
     /// * `channel_size` - Size of the command channel (backpressure control)
+    /// * `batch_config` - Configuration for batch commits
+    /// * `wal_checkpoint_pages` - WAL checkpoint threshold in pages
     pub fn spawn<P: AsRef<Path>>(
         db_path: P,
         notify_bus: NotificationBus,
         channel_size: usize,
+        batch_config: BatchConfig,
+        wal_checkpoint_pages: i32,
     ) -> Result<Self, WriterError> {
         let db_path = db_path.as_ref().to_path_buf();
         let (sender, receiver) = mpsc::channel(channel_size);
@@ -187,7 +238,7 @@ impl Writer {
         let handle = thread::Builder::new()
             .name("sluice-writer".into())
             .spawn(move || {
-                if let Err(e) = writer_thread_main(db_path, receiver, notify_bus) {
+                if let Err(e) = writer_thread_main(db_path, receiver, notify_bus, batch_config, wal_checkpoint_pages) {
                     tracing::error!(error = %e, "Writer thread error");
                 }
             })
@@ -220,6 +271,8 @@ fn writer_thread_main(
     db_path: std::path::PathBuf,
     mut receiver: mpsc::Receiver<WriterMessage>,
     notify_bus: NotificationBus,
+    batch_config: BatchConfig,
+    wal_checkpoint_pages: i32,
 ) -> Result<(), WriterError> {
     // Open database connection
     let conn = Connection::open(&db_path).map_err(|e| WriterError::Database(e.to_string()))?;
@@ -228,13 +281,23 @@ fn writer_thread_main(
     apply_pragmas(&conn).map_err(|e| WriterError::Database(e.to_string()))?;
     initialize_schema(&conn).map_err(|e| WriterError::Database(e.to_string()))?;
 
-    tracing::info!(path = ?db_path, "Writer thread started");
+    // Set WAL auto-checkpoint threshold
+    conn.execute_batch(&format!("PRAGMA wal_autocheckpoint = {wal_checkpoint_pages};"))
+        .map_err(|e| WriterError::Database(e.to_string()))?;
+
+    tracing::info!(
+        path = ?db_path,
+        batch_size = batch_config.max_batch_size,
+        batch_delay_ms = batch_config.max_batch_delay.as_millis(),
+        wal_checkpoint_pages,
+        "Writer thread started"
+    );
 
     // Topic ID cache
     let mut topic_cache: HashMap<String, i64> = HashMap::new();
 
     // Batch accumulator
-    let mut batch: BatchAccumulator<PublishCommand> = BatchAccumulator::new(BatchConfig::default());
+    let mut batch: BatchAccumulator<PublishCommand> = BatchAccumulator::new(batch_config);
 
     loop {
         // Determine how to wait for the next message
@@ -268,6 +331,15 @@ fn writer_thread_main(
                 if ready {
                     flush_batch(&conn, &mut batch, &mut topic_cache, &notify_bus)?;
                 }
+            }
+            Some(WriterMessage::BatchPublish(cmd)) => {
+                // Flush pending batch first to ensure consistency
+                if !batch.is_empty() {
+                    flush_batch(&conn, &mut batch, &mut topic_cache, &notify_bus)?;
+                }
+                // Execute batch publish atomically
+                let result = execute_batch_publish(&conn, cmd.topic, cmd.messages, &mut topic_cache, &notify_bus);
+                let _ = cmd.reply.send(result);
             }
             Some(WriterMessage::GetOrCreateSubscription(cmd)) => {
                 // Flush pending batch first to ensure consistency
@@ -403,6 +475,73 @@ fn flush_batch(
     Ok(())
 }
 
+/// Execute a batch publish atomically in a single transaction.
+fn execute_batch_publish(
+    conn: &Connection,
+    topic: String,
+    messages: Vec<BatchMessageInput>,
+    topic_cache: &mut HashMap<String, i64>,
+    notify_bus: &NotificationBus,
+) -> Result<(Vec<BatchPublishResultItem>, i64), WriterError> {
+    if messages.is_empty() {
+        return Ok((Vec::new(), now_millis()));
+    }
+
+    let now = now_millis();
+    let batch_size = messages.len();
+
+    tracing::debug!(batch_size, topic = %topic, "Executing batch publish");
+
+    // Execute in a transaction
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| WriterError::Database(e.to_string()))?;
+
+    // Get or create topic
+    let topic_id = match topic_cache.get(&topic) {
+        Some(&id) => id,
+        None => {
+            let id = insert_or_get_topic(&tx, &topic, now)
+                .map_err(|e| WriterError::Database(e.to_string()))?;
+            topic_cache.insert(topic.clone(), id);
+            id
+        }
+    };
+
+    let mut results = Vec::with_capacity(batch_size);
+    let mut max_seq = 0i64;
+
+    for msg in messages {
+        let seq = insert_message(
+            &tx,
+            topic_id,
+            &msg.message_id,
+            msg.payload.as_deref(),
+            msg.attributes.as_deref(),
+            now,
+        )
+        .map_err(|e| WriterError::Database(e.to_string()))?;
+
+        max_seq = max_seq.max(seq);
+
+        results.push(BatchPublishResultItem {
+            message_id: msg.message_id,
+            sequence: seq,
+        });
+    }
+
+    // Commit transaction (single fsync for entire batch)
+    tx.commit()
+        .map_err(|e| WriterError::Database(e.to_string()))?;
+
+    tracing::debug!(batch_size, topic = %topic, "Batch publish committed");
+
+    // Notify subscribers
+    notify_bus.notify(topic_id, max_seq);
+
+    Ok((results, now))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,7 +553,14 @@ mod tests {
         let db_path = temp_dir.path().join("test.db");
         let notify_bus = NotificationBus::new(16);
 
-        let writer = Writer::spawn(&db_path, notify_bus.clone(), 100).unwrap();
+        let writer = Writer::spawn(
+            &db_path,
+            notify_bus.clone(),
+            100,
+            BatchConfig::test_config(),
+            100,
+        )
+        .unwrap();
         let handle = writer.handle();
 
         // Publish a message

@@ -26,6 +26,14 @@ impl Default for BatchConfig {
 }
 
 impl BatchConfig {
+    /// Create a BatchConfig from application config values.
+    pub fn from_config(batch_size: usize, batch_delay_ms: u64) -> Self {
+        Self {
+            max_batch_size: batch_size,
+            max_batch_delay: Duration::from_millis(batch_delay_ms),
+        }
+    }
+
     /// Create a test config with small batch size and short delay.
     #[cfg(test)]
     pub fn test_config() -> Self {

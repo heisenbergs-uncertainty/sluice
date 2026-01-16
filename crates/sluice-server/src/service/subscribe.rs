@@ -4,6 +4,7 @@
 
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::Stream;
@@ -15,7 +16,7 @@ use crate::observability::metrics::{record_backpressure, record_subscription_lag
 use crate::proto::sluice::v1::subscribe_downstream::Response as DownstreamResponse;
 use crate::proto::sluice::v1::subscribe_upstream::Request as UpstreamRequest;
 use crate::proto::sluice::v1::{
-    InitialPosition, MessageDelivery, SubscribeDownstream, SubscribeUpstream,
+    Heartbeat, InitialPosition, MessageDelivery, SubscribeDownstream, SubscribeUpstream,
 };
 use crate::server::ServerState;
 use crate::service::ConsumerGroupKey;
@@ -137,6 +138,16 @@ pub async fn handle_subscribe(
             // Use existing cursor or start from 0
             subscription.cursor_seq
         }
+        InitialPosition::Offset => {
+            // Start from specific offset provided in init message
+            if init.offset == 0 {
+                return Err(Status::invalid_argument(
+                    "offset must be provided and > 0 for OFFSET position",
+                ));
+            }
+            // Use the offset as cursor position (will start reading from offset + 1)
+            init.offset as i64
+        }
     };
 
     // Register connection for takeover handling
@@ -202,6 +213,11 @@ async fn subscription_loop(
     let mut cursor = initial_cursor;
     let mut notify_rx = state.notify_bus.subscribe();
 
+    // Heartbeat interval (30 seconds)
+    let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(30));
+    // Skip first immediate tick
+    heartbeat_interval.tick().await;
+
     tracing::debug!(
         topic_id,
         consumer_group = %consumer_group,
@@ -252,6 +268,35 @@ async fn subscription_loop(
                         return Err(e);
                     }
                 }
+            }
+
+            // Send heartbeat periodically
+            _ = heartbeat_interval.tick() => {
+                // Get latest sequence for the topic
+                let max_seq = {
+                    let conn = state
+                        .reader_pool
+                        .get()
+                        .map_err(|e| Status::internal(format!("database error: {e}")))?;
+                    get_topic_max_seq(&conn, topic_id)
+                        .map_err(|e| Status::internal(format!("database error: {e}")))?
+                };
+
+                let heartbeat = Heartbeat {
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as i64,
+                    latest_seq: max_seq as u64,
+                };
+
+                if tx.send(Ok(SubscribeDownstream {
+                    response: Some(DownstreamResponse::Heartbeat(heartbeat)),
+                })).await.is_err() {
+                    return Err(Status::cancelled("client disconnected"));
+                }
+
+                tracing::trace!(topic_id, max_seq, "Heartbeat sent");
             }
 
             // Handle notifications about new data
